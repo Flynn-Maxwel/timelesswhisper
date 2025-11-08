@@ -38,7 +38,9 @@
         updateDoc, 
         arrayUnion,
         onSnapshot,
-        arrayRemove
+        arrayRemove,
+        deleteDoc,
+        orderBy
       } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
       // Your web app's Firebase configuration
@@ -62,8 +64,11 @@
       // --- PAGE SCRIPT ---
       document.addEventListener('DOMContentLoaded', () => {
         
-        // This is the EXACT path your main site is reading from
+        // --- Collection References ---
         const poemsColRef = collection(db, "artifacts", appId, "public", "data", "poems");
+        const commentsColRef = collection(db, "artifacts", appId, "public", "data", "comments");
+        const usersColRef = collection(db, "artifacts", appId, "users");
+
         
         // --- DATA & CONSTANTS ---
         const emotions = ['All', 'Favorites', 'Love', 'Loss', 'Hope', 'Healing', 'Chaos', 'Silent Nights', 'Red Verse'];
@@ -75,6 +80,8 @@
         let currentOpenPoemId = null; // Stores Firebase doc ID (string)
         let allPoems = []; // This will be filled from Firestore
         let currentUserId = null;
+        let adminListeners = []; // To store admin onSnapshot listeners
+        let poemFormEditId = null; // Stores ID of poem being edited
 
         // --- DOM ELEMENTS ---
         const docElement = document.documentElement;
@@ -100,6 +107,23 @@
         const poemForm = document.getElementById('poem-form'); 
         const statusMessage = document.getElementById('status-message');
         const loadingIndicator = document.getElementById('loading-indicator');
+        const adminTabs = document.querySelectorAll('.admin-tab');
+        const adminTabContents = document.querySelectorAll('.admin-tab-content');
+        const addEditPoemTab = document.querySelector('[data-tab="add-edit-poem"]');
+        const poemFormTitle = document.getElementById('poem-form-title');
+        const submitBtn = document.getElementById('submit-btn');
+        
+        // Admin Data Lists
+        const adminPoemList = document.getElementById('admin-poem-list');
+        const adminCommentList = document.getElementById('admin-comment-list');
+        const adminReviewList = document.getElementById('admin-review-list');
+        const adminSubmissionList = document.getElementById('admin-submission-list');
+        
+        // Admin Stats
+        const statTotalPoems = document.getElementById('stat-total-poems');
+        const statTotalComments = document.getElementById('stat-total-comments');
+        const statTotalUsers = document.getElementById('stat-total-users');
+
 
         // --- SVG ICONS ---
         const SunIcon = `<svg class="w-6 h-6" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m4.93 19.07 1.41-1.41"></path><path d="m17.66 6.34 1.41-1.41"></path></svg>`;
@@ -343,7 +367,7 @@
         }
         
         async function loadUserFavorites(userId) {
-            const userRef = doc(db, "artifacts", appId, "users", userId);
+            const userRef = doc(usersColRef, userId);
             
             // Listen for real-time changes to favorites
             onSnapshot(userRef, (docSnap) => {
@@ -386,6 +410,12 @@
                 console.log("Logged out");
             }).catch(err => console.error("Sign Out Error:", err));
         }
+        
+        // --- ADMIN: Detach all listeners ---
+        function cleanupAdminListeners() {
+            adminListeners.forEach(unsubscribe => unsubscribe());
+            adminListeners = [];
+        }
 
         onAuthStateChanged(auth, (user) => {
             if (user) {
@@ -403,9 +433,12 @@
                 if (user.email === 'timelesswhispersmax@gmail.com') {
                     if (adminLink) adminLink.classList.remove('hidden');
                     if (adminSection) adminSection.classList.remove('hidden');
+                    // Load all admin data
+                    loadAdminData();
                 } else {
                     if (adminLink) adminLink.classList.add('hidden');
                     if (adminSection) adminSection.classList.add('hidden');
+                    cleanupAdminListeners(); // Detach listeners if not admin
                 }
                 
             } else {
@@ -421,6 +454,7 @@
                 // Hide admin panel if signed out
                 if (adminLink) adminLink.classList.add('hidden');
                 if (adminSection) adminSection.classList.add('hidden');
+                cleanupAdminListeners(); // Detach listeners on sign out
             }
             // Update comment form visibility if modal is open
             checkAuthForComments(user);
@@ -432,7 +466,7 @@
 
         async function saveUser(u){
           // Save user data to a private collection
-          const userRef = doc(db, "artifacts", appId, "users", u.uid);
+          const userRef = doc(usersColRef, u.uid);
           try {
             await setDoc(userRef, {
                 name: u.displayName,
@@ -482,7 +516,7 @@
 
             // Public likes collection
             const likeRef = doc(db, "artifacts", appId, "public", "data", "likes", `${currentOpenPoemId}_${currentUserId}`);
-            const poemRef = doc(db, "artifacts", appId, "public", "data", "poems", currentOpenPoemId);
+            const poemRef = doc(poemsColRef, currentOpenPoemId);
 
             try {
                 const likeSnap = await getDoc(likeRef);
@@ -525,7 +559,7 @@
 
             try {
                 // 1. Get the total like count from the poem document itself
-                const poemRef = doc(db, "artifacts", appId, "public", "data", "poems", poemDocId);
+                const poemRef = doc(poemsColRef, poemDocId);
                 const poemSnap = await getDoc(poemRef);
                 if (poemSnap.exists()) {
                     likeCountSpan.textContent = poemSnap.data().likeCount || 0;
@@ -591,7 +625,7 @@
 
             try {
                 // Save to a public subcollection
-                await addDoc(collection(db, "artifacts", appId, "public", "data", "comments"), {
+                await addDoc(commentsColRef, {
                     poemID: currentOpenPoemId,
                     userID: user.uid,
                     user: user.displayName, // user's display name
@@ -631,7 +665,7 @@
             }
             
             const q = query(
-                collection(db, "artifacts", appId, "public", "data", "comments"), 
+                commentsColRef, 
                 where("poemID", "==", poemDocId)
                 // Note: We are sorting in code to avoid the composite index requirement
             );
@@ -695,7 +729,7 @@
             
             try {
                 // 1. Save to user's private collection in Firestore
-                await addDoc(collection(db, "artifacts", appId, "users", currentUserId, "reviews"), {
+                await addDoc(collection(usersColRef, currentUserId, "reviews"), {
                     text: reviewText,
                     createdAt: serverTimestamp()
                 });
@@ -735,7 +769,7 @@
 
             try {
                 // 1. Save to user's private collection in Firestore
-                await addDoc(collection(db, "artifacts", appId, "users", currentUserId, "submissions"), {
+                await addDoc(collection(usersColRef, currentUserId, "submissions"), {
                     title: title,
                     content: content,
                     createdAt: serverTimestamp()
@@ -759,7 +793,222 @@
             }
         }
 
-        // --- ADMIN PANEL FORM LOGIC ---
+        // --- ADMIN PANEL FUNCTIONS ---
+        
+        // --- 1. Load All Data ---
+        function loadAdminData() {
+            // Detach old listeners before attaching new ones
+            cleanupAdminListeners();
+            
+            // Attach new listeners and store them
+            adminListeners.push(loadPoemsForAdmin());
+            adminListeners.push(loadCommentsForAdmin());
+            adminListeners.push(loadSubmissionsForAdmin());
+        }
+        
+        // --- 2. Load Poems (for Admin List) ---
+        function loadPoemsForAdmin() {
+            const q = query(poemsColRef, orderBy("id", "desc"));
+            const unsubscribe = onSnapshot(q, (snapshot) => {
+                if (!adminPoemList) return;
+                adminPoemList.innerHTML = ''; // Clear list
+                statTotalPoems.textContent = snapshot.size; // Update stat
+                
+                if (snapshot.empty) {
+                    adminPoemList.innerHTML = `<p class="opacity-70">No poems found.</p>`;
+                    return;
+                }
+                
+                snapshot.forEach(doc => {
+                    const poem = doc.data();
+                    const title = poem.title || "The Space Between";
+                    const poemEl = document.createElement('div');
+                    poemEl.className = "flex justify-between items-center p-3 rounded-lg";
+                    poemEl.innerHTML = `
+                        <div>
+                            <p class="font-bold">${title}</p>
+                            <p class="text-sm opacity-70">Category: ${poem.emotion}</p>
+                        </div>
+                        <div class="flex gap-2">
+                            <button class="edit-poem-btn text-sm font-medium text-blue-500 hover:underline" data-id="${doc.id}">Edit</button>
+                            <button class="delete-poem-btn text-sm font-medium text-red-500 hover:underline" data-id="${doc.id}">Delete</button>
+                        </div>
+                    `;
+                    adminPoemList.appendChild(poemEl);
+                });
+                
+                // Attach event listeners for new buttons
+                adminPoemList.querySelectorAll('.edit-poem-btn').forEach(btn => {
+                    btn.addEventListener('click', () => editPoem(btn.dataset.id));
+                });
+                adminPoemList.querySelectorAll('.delete-poem-btn').forEach(btn => {
+                    btn.addEventListener('click', () => deletePoem(btn.dataset.id));
+                });
+                
+            }, (error) => {
+                console.error("Error loading admin poems:", error);
+                adminPoemList.innerHTML = `<p class="text-red-500">Error loading poems.</p>`;
+            });
+            return unsubscribe; // Return for cleanup
+        }
+        
+        // --- 3. Load Comments (for Moderation) ---
+        function loadCommentsForAdmin() {
+            const q = query(commentsColRef, orderBy("time", "desc"));
+            const unsubscribe = onSnapshot(q, (snapshot) => {
+                if (!adminCommentList) return;
+                adminCommentList.innerHTML = ''; // Clear list
+                statTotalComments.textContent = snapshot.size; // Update stat
+
+                if (snapshot.empty) {
+                    adminCommentList.innerHTML = `<p class="opacity-70">No comments found.</p>`;
+                    return;
+                }
+                
+                snapshot.forEach(doc => {
+                    const comment = doc.data();
+                    const time = comment.time ? new Date(comment.time.seconds * 1000).toLocaleString() : 'Just now';
+                    const commentEl = document.createElement('div');
+                    commentEl.className = "p-3 border-l-2"
+                    commentEl.innerHTML = `
+                        <p class="mb-1">"${comment.text}"</p>
+                        <p class="text-sm opacity-70">By: <strong>${comment.user}</strong> on ${time}</p>
+                        <button class="delete-comment-btn text-sm font-medium text-red-500 hover:underline" data-id="${doc.id}">Delete</button>
+                    `;
+                    adminCommentList.appendChild(commentEl);
+                });
+                
+                // Attach listeners
+                adminCommentList.querySelectorAll('.delete-comment-btn').forEach(btn => {
+                    btn.addEventListener('click', () => deleteComment(btn.dataset.id));
+                });
+                
+            }, (error) => {
+                console.error("Error loading admin comments:", error);
+                adminCommentList.innerHTML = `<p class="text-red-500">Error loading comments.</p>`;
+            });
+            return unsubscribe; // Return for cleanup
+        }
+        
+        // --- 4. Load Submissions (from all users) ---
+        function loadSubmissionsForAdmin() {
+            // This listener will update the user count stat
+            const unsubscribe = onSnapshot(usersColRef, async (usersSnapshot) => {
+                if (!adminReviewList || !adminSubmissionList) return;
+                
+                adminReviewList.innerHTML = '';
+                adminSubmissionList.innerHTML = '';
+                statTotalUsers.textContent = usersSnapshot.size; // Update stat
+                
+                let reviewsFound = false;
+                let submissionsFound = false;
+
+                for (const userDoc of usersSnapshot.docs) {
+                    const user = userDoc.data();
+                    
+                    // Get Reviews
+                    const reviewsRef = collection(usersColRef, userDoc.id, "reviews");
+                    const reviewsSnap = await getDocs(query(reviewsRef, orderBy("createdAt", "desc")));
+                    reviewsSnap.forEach(doc => {
+                        reviewsFound = true;
+                        const review = doc.data();
+                        const time = review.createdAt ? new Date(review.createdAt.seconds * 1000).toLocaleString() : 'Just now';
+                        const el = document.createElement('div');
+                        el.className = "p-3 border-l-2";
+                        el.innerHTML = `
+                            <p class="mb-1">"${review.text}"</p>
+                            <p class="text-sm opacity-70">By: <strong>${user.name}</strong> on ${time}</p>
+                        `;
+                        adminReviewList.appendChild(el);
+                    });
+                    
+                    // Get Submissions
+                    const submissionsRef = collection(usersColRef, userDoc.id, "submissions");
+                    const submissionsSnap = await getDocs(query(submissionsRef, orderBy("createdAt", "desc")));
+                    submissionsSnap.forEach(doc => {
+                        submissionsFound = true;
+                        const submission = doc.data();
+                        const time = submission.createdAt ? new Date(submission.createdAt.seconds * 1000).toLocaleString() : 'Just now';
+                        const el = document.createElement('div');
+                        el.className = "p-3 border-l-2";
+                        el.innerHTML = `
+                            <p class="font-bold">${submission.title}</p>
+                            <p class="mb-1 whitespace-pre-wrap">${submission.content}</p>
+                            <p class="text-sm opacity-70">By: <strong>${user.name}</strong> on ${time}</p>
+                        `;
+                        adminSubmissionList.appendChild(el);
+                    });
+                }
+                
+                if (!reviewsFound) adminReviewList.innerHTML = `<p class="opacity-70">No reviews found.</p>`;
+                if (!submissionsFound) adminSubmissionList.innerHTML = `<p class="opacity-70">No poem submissions found.</p>`;
+
+            }, (error) => {
+                console.error("Error loading user submissions:", error);
+            });
+            return unsubscribe; // Return for cleanup
+        }
+        
+        // --- 5. Admin Action: Delete Poem ---
+        async function deletePoem(poemDocId) {
+            if (!poemDocId) return;
+            // Note: We might want to delete all comments/likes associated with this poem too.
+            // For now, just delete the poem.
+            try {
+                await deleteDoc(doc(poemsColRef, poemDocId));
+                console.log("Poem deleted:", poemDocId);
+                // The onSnapshot listener will auto-update the list
+            } catch (error) {
+                console.error("Error deleting poem:", error);
+            }
+        }
+        
+        // --- 6. Admin Action: Delete Comment ---
+        async function deleteComment(commentDocId) {
+            if (!commentDocId) return;
+            try {
+                await deleteDoc(doc(commentsColRef, commentDocId));
+                console.log("Comment deleted:", commentDocId);
+                // The onSnapshot listener will auto-update the list
+            } catch (error) {
+                console.error("Error deleting comment:", error);
+            }
+        }
+        
+        // --- 7. Admin Action: Edit Poem (Load data into form) ---
+        function editPoem(poemDocId) {
+            const poem = allPoems.find(p => p.docId === poemDocId);
+            if (!poem) return;
+            
+            // Store the ID for the submit handler
+            poemFormEditId = poemDocId;
+            
+            // Populate the form
+            document.getElementById('poem-title').value = poem.title || '';
+            document.getElementById('poem-content').value = poem.content || '';
+            document.getElementById('poem-emotion').value = poem.emotion || '';
+            
+            // Change UI
+            poemFormTitle.textContent = "Edit Poem";
+            submitBtn.textContent = "Update Poem";
+            
+            // Switch to the "Add/Edit Poem" tab
+            adminTabs.forEach(t => t.classList.remove('admin-tab-active'));
+            addEditPoemTab.classList.add('admin-tab-active');
+            adminTabContents.forEach(c => c.classList.add('hidden'));
+            document.getElementById('content-add-edit-poem').classList.remove('hidden');
+        }
+        
+        // --- 8. Admin Action: Reset Poem Form ---
+        function resetPoemForm() {
+            poemForm.reset();
+            poemFormEditId = null;
+            poemFormTitle.textContent = "Add a New Poem";
+            submitBtn.textContent = "Submit Poem";
+            statusMessage.classList.add('hidden');
+        }
+
+        // --- 9. Admin Panel Form Logic (Handles BOTH Add and Edit) ---
         function showStatus(message, isError = false) {
             if (statusMessage) { // Add check in case admin HTML is missing
                 statusMessage.textContent = message;
@@ -775,7 +1024,6 @@
                 const title = document.getElementById('poem-title').value;
                 const content = document.getElementById('poem-content').value;
                 const emotion = document.getElementById('poem-emotion').value;
-                const submitBtn = document.getElementById('submit-btn');
 
                 if (!title || !content || !emotion) {
                     showStatus("Please fill out all fields.", true);
@@ -784,37 +1032,51 @@
 
                 submitBtn.disabled = true;
                 loadingIndicator.classList.remove('hidden');
-                showStatus("Submitting...", false);
-
+                
                 try {
-                    // 1. Get all existing poems to find the highest ID
-                    const q = query(poemsColRef);
-                    const snapshot = await getDocs(q);
-                    let highestId = 0;
-                    snapshot.forEach(doc => {
-                        const poemId = doc.data().id;
-                        if (poemId && poemId > highestId) {
-                            highestId = poemId;
+                    if (poemFormEditId) {
+                        // --- UPDATE existing poem ---
+                        showStatus("Updating...", false);
+                        const poemRef = doc(poemsColRef, poemFormEditId);
+                        await updateDoc(poemRef, {
+                            title: title,
+                            content: content,
+                            emotion: emotion
+                            // We don't update the 'id' field
+                        });
+                        console.log("Poem updated with ID: ", poemFormEditId);
+                        showStatus("Poem updated successfully!", false);
+                        resetPoemForm();
+                        
+                    } else {
+                        // --- ADD new poem ---
+                        showStatus("Submitting...", false);
+                        // 1. Get all existing poems to find the highest ID
+                        const q = query(poemsColRef, orderBy("id", "desc"));
+                        const snapshot = await getDocs(q);
+                        let highestId = 0;
+                        if (!snapshot.empty) {
+                            highestId = snapshot.docs[0].data().id || 0;
                         }
-                    });
-                    
-                    // 2. Create the new poem object with the next ID
-                    const newPoem = {
-                        title: title,
-                        content: content,
-                        emotion: emotion,
-                        id: highestId + 1 // Ensure new poems sort to the end
-                    };
+                        
+                        // 2. Create the new poem object with the next ID
+                        const newPoem = {
+                            title: title,
+                            content: content,
+                            emotion: emotion,
+                            id: highestId + 1 // Ensure new poems sort to the end
+                        };
 
-                    // 3. Add the new poem to the correct collection
-                    const docRef = await addDoc(poemsColRef, newPoem);
-                    
-                    console.log("Poem submitted with ID: ", docRef.id);
-                    showStatus("Poem submitted successfully!", false);
-                    poemForm.reset();
+                        // 3. Add the new poem to the correct collection
+                        const docRef = await addDoc(poemsColRef, newPoem);
+                        
+                        console.log("Poem submitted with ID: ", docRef.id);
+                        showStatus("Poem submitted successfully!", false);
+                        poemForm.reset();
+                    }
 
                 } catch (error) {
-                    console.error("Error adding poem: ", error);
+                    console.error("Error adding/updating poem: ", error);
                     showStatus(`Error: ${error.message}`, true);
                 } finally {
                     submitBtn.disabled = false;
@@ -822,6 +1084,32 @@
                 }
             });
         }
+        
+        // --- 10. Admin Tab Switching Logic ---
+        adminTabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                const target = tab.dataset.tab;
+                
+                // Update tab styles
+                adminTabs.forEach(t => t.classList.remove('admin-tab-active'));
+                tab.classList.add('admin-tab-active');
+                
+                // Show/hide content
+                adminTabContents.forEach(content => {
+                    if (content.id === `content-${target}`) {
+                        content.classList.remove('hidden');
+                    } else {
+                        content.classList.add('hidden');
+                    }
+                });
+                
+                // If switching to Add/Edit tab, reset the form
+                if (target === 'add-edit-poem') {
+                    resetPoemForm();
+                }
+            });
+        });
+
         
         // --- EVENT LISTENERS ---
         modalCloseBtn.addEventListener('click', () => {
@@ -1127,7 +1415,7 @@
             outline: none;
         }
         
-        /* Style admin panel fields to match */
+        /* --- Admin Panel Styles --- */
         .admin-input {
             background-color: var(--c-bg);
             border: 2px solid var(--c-accent-2);
@@ -1145,6 +1433,24 @@
             border-color: #4b5563; /* gray-600 */
             color: #f3f4f6; /* gray-100 */
         }
+        
+        .admin-tab {
+            opacity: 0.6;
+            border-bottom: 3px solid transparent;
+            transform: translateY(3px);
+        }
+        .admin-tab.admin-tab-active {
+            opacity: 1;
+            border-bottom-color: var(--c-accent-1);
+        }
+        
+        .admin-data-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .admin-data-list > div:nth-child(even) {
+            background-color: rgba(128, 128, 128, 0.05);
+        }
 
 
     </style>
@@ -1159,7 +1465,7 @@
                 <a href="#journal" class="font-body text-sm hover:text-[var(--c-highlight)] transition-colors">Journal</a>
                 <a href="#gallery" class="font-body text-sm hover:text-[var(--c-highlight)] transition-colors">Gallery</a>
                 <a href="#connect" class="font-body text-sm hover:text-[var(--c-highlight)] transition-colors">Connect</a>
-                <a href="#admin" id="admin-link" class="font-body text-sm hover:text-[var(--c-highlight)] transition-colors hidden font-bold text-red-500">Admin</a>
+                <a href="#admin" id="admin-link" class="font-body text-sm hover:text-[var(--c-highlight)] transition-colors hidden font-bold" style="color: var(--c-highlight);">Admin</a>
                 <div id="nav-auth" class="flex items-center gap-2 md:gap-4 pl-2 md:pl-4 border-l" style="border-color: var(--c-accent-2);">
                     <span id="user-info" class="text-sm">
                         <span id="user-name" class="font-bold"></span>
@@ -1252,52 +1558,123 @@
         </section>
         
         <!-- ADMIN PANEL (Hidden by default) -->
-        <section id="admin" class="py-20 px-4 hidden bg-black/5 dark:bg-white/5">
+        <section id="admin" class="py-20 px-4 hidden" style="background-color: var(--c-bg);">
             <div class="max-w-4xl mx-auto p-4 md:p-8">
-                <div class="p-6 md:p-8 rounded-lg shadow-md" style="background-color: var(--c-bg); border: 1px solid var(--c-accent-2);">
-                    <h2 class="font-headline text-2xl mb-6 font-bold" style="color: var(--c-highlight);">Admin Panel - Add Poem</h2>
+                <h2 class="font-headline text-3xl font-bold text-center mb-8" style="color: var(--c-highlight);">Admin Panel</h2>
+                
+                <!-- Admin Tabs -->
+                <div class="mb-6 border-b" style="border-color: var(--c-accent-2);">
+                    <nav class="flex -mb-px space-x-6">
+                        <button class="admin-tab admin-tab-active font-medium pb-3" data-tab="dashboard">Dashboard</button>
+                        <button class="admin-tab font-medium pb-3" data-tab="add-edit-poem">Add/Edit Poem</button>
+                        <button class="admin-tab font-medium pb-3" data-tab="manage-poems">Manage Poems</button>
+                        <button class="admin-tab font-medium pb-3" data-tab="moderate-comments">Moderate Comments</button>
+                        <button class="admin-tab font-medium pb-3" data-tab="view-submissions">View Submissions</button>
+                    </nav>
+                </div>
+
+                <!-- Admin Tab Content -->
+                <div>
+                    <!-- Dashboard -->
+                    <div id="content-dashboard" class="admin-tab-content">
+                        <h3 class="font-headline text-2xl mb-4" style="color: var(--c-accent-1);">Site Statistics</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div class="p-4 rounded-lg" style="background-color: var(--c-accent-2);">
+                                <div class="text-3xl font-bold" id="stat-total-poems">0</div>
+                                <div class="text-sm opacity-80">Total Poems</div>
+                            </div>
+                            <div class="p-4 rounded-lg" style="background-color: var(--c-accent-2);">
+                                <div class="text-3xl font-bold" id="stat-total-comments">0</div>
+                                <div class="text-sm opacity-80">Total Comments</div>
+                            </div>
+                            <div class="p-4 rounded-lg" style="background-color: var(--c-accent-2);">
+                                <div class="text-3xl font-bold" id="stat-total-users">0</div>
+                                <div class="text-sm opacity-80">Total Users</div>
+                            </div>
+                        </div>
+                    </div>
                     
-                    <form id="poem-form" class="space-y-4">
-                        <!-- Title -->
-                        <div>
-                            <label for="poem-title" class="block text-sm font-medium" style="color: var(--c-text);">Title</label>
-                            <input type="text" id="poem-title" class="mt-1 block w-full rounded-lg p-3 focus:ring-2 outline-none transition-shadow admin-input" required>
-                        </div>
+                    <!-- Add/Edit Poem -->
+                    <div id="content-add-edit-poem" class="admin-tab-content hidden">
+                        <form id="poem-form" class="space-y-4">
+                            <h3 id="poem-form-title" class="font-headline text-2xl mb-4" style="color: var(--c-accent-1);">Add a New Poem</h3>
+                            <!-- Title -->
+                            <div>
+                                <label for="poem-title" class="block text-sm font-medium" style="color: var(--c-text);">Title</label>
+                                <input type="text" id="poem-title" class="mt-1 block w-full rounded-lg p-3 focus:ring-2 outline-none transition-shadow admin-input" required>
+                            </div>
 
-                        <!-- Category -->
-                        <div>
-                            <label for="poem-emotion" class="block text-sm font-medium" style="color: var(--c-text);">Category (Emotion)</label>
-                            <select id="poem-emotion" class="mt-1 block w-full rounded-lg p-3 focus:ring-2 outline-none transition-shadow admin-input" required>
-                                <option value="">Select a category...</option>
-                                <option value="Love">Love</option>
-                                <option value="Loss">Loss</option>
-                                <option value="Hope">Hope</option>
-                                <option value="Healing">Healing</option>
-                                <option value="Chaos">Chaos</option>
-                                <option value="Silent Nights">Silent Nights</option>
-                                <option value="Red Verse">Red Verse</option>
-                            </select>
-                        </div>
+                            <!-- Category -->
+                            <div>
+                                <label for="poem-emotion" class="block text-sm font-medium" style="color: var(--c-text);">Category (Emotion)</label>
+                                <select id="poem-emotion" class="mt-1 block w-full rounded-lg p-3 focus:ring-2 outline-none transition-shadow admin-input" required>
+                                    <option value="">Select a category...</option>
+                                    <option value="Love">Love</option>
+                                    <option value="Loss">Loss</option>
+                                    <option value="Hope">Hope</option>
+                                    <option value="Healing">Healing</option>
+                                    <option value="Chaos">Chaos</option>
+                                    <option value="Silent Nights">Silent Nights</option>
+                                    <option value="Red Verse">Red Verse</option>
+                                </select>
+                            </div>
 
-                        <!-- Content -->
-                        <div>
-                            <label for="poem-content" class="block text-sm font-medium" style="color: var(--c-text);">Content</label>
-                            <textarea id="poem-content" rows="15" class="mt-1 block w-full rounded-lg p-3 focus:ring-2 outline-none transition-shadow admin-input" required></textarea>
-                            <p class="text-xs opacity-60 mt-1">Line breaks will be preserved.</p>
-                        </div>
+                            <!-- Content -->
+                            <div>
+                                <label for="poem-content" class="block text-sm font-medium" style="color: var(--c-text);">Content</label>
+                                <textarea id="poem-content" rows="15" class="mt-1 block w-full rounded-lg p-3 focus:ring-2 outline-none transition-shadow admin-input" required></textarea>
+                                <p class="text-xs opacity-60 mt-1">Line breaks will be preserved.</p>
+                            </div>
 
-                        <!-- Submit Button -->
-                        <div class="flex items-center gap-4">
-                            <button id="submit-btn" type="submit" class="font-bold py-2 px-5 rounded-full shadow-lg hover:opacity-90 transition-all text-sm disabled:opacity-60" style="background-color: var(--c-accent-1); color: var(--c-bg);">
-                                Submit Poem
-                            </button>
-                            <svg id="loading-indicator" class="hidden animate-spin h-5 w-5" style="color: var(--c-accent-1);" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            <span id="status-message" class="text-sm hidden"></span>
+                            <!-- Submit Button -->
+                            <div class="flex items-center gap-4">
+                                <button id="submit-btn" type="submit" class="font-bold py-2 px-5 rounded-full shadow-lg hover:opacity-90 transition-all text-sm disabled:opacity-60" style="background-color: var(--c-accent-1); color: var(--c-bg);">
+                                    Submit Poem
+                                </button>
+                                <svg id="loading-indicator" class="hidden animate-spin h-5 w-5" style="color: var(--c-accent-1);" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                <span id="status-message" class="text-sm hidden"></span>
+                            </div>
+                        </form>
+                    </div>
+                    
+                    <!-- Manage Poems -->
+                    <div id="content-manage-poems" class="admin-tab-content hidden">
+                        <h3 class="font-headline text-2xl mb-4" style="color: var(--c-accent-1);">Manage Poems</h3>
+                        <div id="admin-poem-list" class="space-y-2 admin-data-list">
+                            <!-- Poem list will be populated here by JS -->
                         </div>
-                    </form>
+                    </div>
+                    
+                    <!-- Moderate Comments -->
+                    <div id="content-moderate-comments" class="admin-tab-content hidden">
+                        <h3 class="font-headline text-2xl mb-4" style="color: var(--c-accent-1);">Moderate Comments</h3>
+                        <div id="admin-comment-list" class="space-y-4 admin-data-list">
+                            <!-- Comment list will be populated here by JS -->
+                        </div>
+                    </div>
+                    
+                    <!-- View Submissions -->
+                    <div id="content-view-submissions" class="admin-tab-content hidden">
+                        <h3 class="font-headline text-2xl mb-4" style="color: var(--c-accent-1);">View User Submissions</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            <div>
+                                <h4 class="font-bold text-lg mb-2">Reviews</h4>
+                                <div id="admin-review-list" class="space-y-4 admin-data-list">
+                                    <!-- Reviews will be populated here by JS -->
+                                </div>
+                            </div>
+                            <div>
+                                <h4 class="font-bold text-lg mb-2">Poem Submissions</h4>
+                                <div id="admin-submission-list" class="space-y-4 admin-data-list">
+                                    <!-- Submissions will be populated here by JS -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
                 </div>
             </div>
         </section>
