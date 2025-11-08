@@ -57,7 +57,7 @@
             arrayUnion,
             arrayRemove,
             onSnapshot,
-            orderBy
+            orderBy // Keep the import, even if not used everywhere
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // *** FIREBASE CONFIG ***
@@ -98,7 +98,7 @@
         
         // This array will be populated from Firestore
         let poems = []; 
-        const emotions = ['All', 'Favorites', 'Love', 'Loss', 'Hope', 'Healing', 'Chaos', 'Silent Nights'];
+        const emotions = ['All', 'Favorites', 'Love', 'Loss', 'Hope', 'Healing', 'Chaos', 'Silent Nights', 'Red Verse'];
         
         // --- PAGE SCRIPT ---
         document.addEventListener('DOMContentLoaded', () => {
@@ -108,6 +108,7 @@
             let activeFilter = 'All';
             let favoritePoemIds = []; // This will be populated from Firestore
             let currentOpenPoemId = null;
+            let isRedVerseActive = false;
 
             // --- DOM ELEMENTS ---
             const docElement = document.documentElement;
@@ -146,6 +147,45 @@
             const HeartIconOutline = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 116.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z"></path></svg>`;
             const HeartIconFilled = `<svg class="w-6 h-6 heart-filled" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.ssp 4.5 0 010-6.364z"></path></svg>`;
             const ShareIcon = `<svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line></svg>`;
+
+            // --- THEME FUNCTIONS ---
+
+            function setRedVerseTheme(isActive) {
+                if (isActive) {
+                    docElement.classList.add('red-verse-theme');
+                    isRedVerseActive = true;
+                } else {
+                    docElement.classList.remove('red-verse-theme');
+                    isRedVerseActive = false;
+                }
+            }
+
+            function toggleTheme() {
+                // If we're in Red Verse mode, exit it first
+                if (isRedVerseActive) {
+                    setRedVerseTheme(false);
+                    // Don't toggle light/dark, just exit Red Verse
+                    renderFilters(); // Re-render filters to show correct state
+                    return;
+                }
+                
+                body.classList.add('theme-transition'); 
+                setTimeout(() => {
+                    docElement.classList.toggle('dark');
+                    docElement.classList.toggle('light');
+                    currentTheme = docElement.classList.contains('dark') ? 'dark' : 'light';
+                    
+                    renderFilters();
+                    renderPoemsGrid();
+                    renderThemeToggle();
+                    
+                    body.classList.remove('theme-transition');
+                }, 500);
+            }
+
+            function renderThemeToggle() {
+                themeToggleButton.innerHTML = currentTheme === 'light' ? MoonIcon : SunIcon;
+            }
 
             // --- POEM DATA FUNCTIONS ---
 
@@ -211,16 +251,43 @@
             // --- RENDER FUNCTIONS ---
             
             function renderFilters() {
-                // This function now uses the global 'poems' array (from Firestore)
-                // but 'emotions' array is static and fine.
-                emotionFiltersContainer.innerHTML = emotions.map(emotion => `
-                    <button data-filter="${emotion}" class="filter-btn py-2 px-5 rounded-full text-sm transition-all duration-300 ${activeFilter === emotion ? 'active text-[var(--c-bg)]' : 'border'}" style="${activeFilter === emotion ? `background-color: var(--c-accent-1); border-color: var(--c-accent-1);` : `border-color: var(--c-accent-2); color: var(--c-text);`}">
-                        ${emotion}
-                    </button>
-                `).join('');
+                emotionFiltersContainer.innerHTML = emotions.map(emotion => {
+                    const isRedVerse = emotion === 'Red Verse';
+                    let activeClass = '';
+                    // Special active state for Red Verse
+                    if (isRedVerse && isRedVerseActive) {
+                        activeClass = 'active text-[var(--c-bg)]';
+                    } else if (!isRedVerse && emotion === activeFilter && !isRedVerseActive) {
+                        activeClass = 'active text-[var(--c-bg)]';
+                    }
+                    
+                    let style = '';
+                    if (activeClass) {
+                        style = `background-color: var(--c-accent-1); border-color: var(--c-accent-1);`;
+                    } else {
+                        style = `border-color: var(--c-accent-2); color: var(--c-text);`;
+                    }
+
+                    return `
+                        <button data-filter="${emotion}" class="filter-btn py-2 px-5 rounded-full text-sm transition-all duration-300 ${activeClass}" style="${style}">
+                            ${emotion}
+                        </button>
+                    `;
+                }).join('');
+
                 emotionFiltersContainer.querySelectorAll('.filter-btn').forEach(btn => {
                     btn.addEventListener('click', () => {
-                        activeFilter = btn.dataset.filter;
+                        const newFilter = btn.dataset.filter;
+                        
+                        // *** FIX: Correctly toggle Red Verse theme ***
+                        if (newFilter === 'Red Verse') {
+                            setRedVerseTheme(true);
+                        } else {
+                            // This ensures clicking ANY other filter turns off Red Verse
+                            setRedVerseTheme(false);
+                        }
+                        
+                        activeFilter = newFilter;
                         renderFilters();
                         renderPoemsGrid();
                     });
@@ -246,6 +313,12 @@
 
                 if (filteredPoems.length === 0 && activeFilter === 'Favorites') {
                     poemsGrid.innerHTML = `<p class="col-span-full text-center opacity-70">You haven't favorited any poems yet. Click the heart icon on a poem to save it here.</p>`;
+                    return;
+                }
+
+                // Special message for Red Verse
+                if (filteredPoems.length === 0 && activeFilter === 'Red Verse') {
+                    poemsGrid.innerHTML = `<p class="col-span-full text-center opacity-70" style="color: var(--c-highlight);">The verse is unwritten. The page awaits the crimson ink.</p>`;
                     return;
                 }
 
@@ -347,26 +420,6 @@
                     // Load favorite status for this poem (using current user)
                     loadFavoriteStatus(poem.id, auth.currentUser);
                 }
-            }
-
-            function renderThemeToggle() {
-                themeToggleButton.innerHTML = currentTheme === 'light' ? MoonIcon : SunIcon;
-            }
-
-            // --- CORE LOGIC ---
-            function toggleTheme() {
-                body.classList.add('theme-transition'); 
-                setTimeout(() => {
-                    docElement.classList.toggle('dark');
-                    docElement.classList.toggle('light');
-                    currentTheme = docElement.classList.contains('dark') ? 'dark' : 'light';
-                    
-                    renderFilters();
-                    renderPoemsGrid();
-                    renderThemeToggle();
-                    
-                    body.classList.remove('theme-transition');
-                }, 500);
             }
 
             // --- AUTH FUNCTIONS ---
@@ -649,10 +702,11 @@
                 if (commentsUnsubscribe) commentsUnsubscribe();
 
                 try {
+                    // *** FIX: Removed orderBy() from the query to prevent index error ***
                     const q = query(
                         collection(db, "artifacts", appId, "public", "data", "comments"), 
-                        where("poemID", "==", poemId.toString()),
-                        orderBy("time", "desc") // Order by 'time', newest first
+                        where("poemID", "==", poemId.toString())
+                        // orderBy("time", "desc") // <-- THIS LINE WAS REMOVED TO FIX THE ERROR
                     );
                     
                     commentsUnsubscribe = onSnapshot(q, (querySnapshot) => {
@@ -660,14 +714,19 @@
                         querySnapshot.forEach(doc => {
                             comments.push(doc.data());
                         });
+
+                        // *** FIX: Sort the comments in JavaScript instead of in the query ***
+                        comments.sort((a, b) => (b.time?.seconds || 0) - (a.time?.seconds || 0));
+
                         renderComments(comments);
                     }, (error) => {
+                        // This is where your error was being caught
                         console.error("Error listening to comments: ", error);
-                        list.innerHTML = "<p style='color: var(--c-highlight);'>Error loading reflections.</p>";
+                        list.innerHTML = "<p style='color: var(--c-highlight);'>Error loading reflections. Please check console.</p>";
                     });
                     
                 } catch (e) {
-                    console.error("Error loading comments: ", e);
+                    console.error("Error building comment query: ", e);
                     list.innerHTML = "<p style='color: var(--c-highlight);'>Error loading reflections.</p>";
                 }
             }
@@ -714,21 +773,10 @@
                         text: text,
                         createdAt: serverTimestamp()
                     });
-
-                    // 2. Send to Getform for email notification
-                    const formData = new FormData();
-                    formData.append('review_feedback', text);
-                    formData.append('user', currentUserName); // Add user's name
-                    formData.append('userId', currentUserId); // Add user's ID
                     
-                    await fetch("https://getform.io/f/bolzexka", {
-                        method: "POST",
-                        body: formData,
-                    });
-
-                    // 3. Give user feedback
+                    // 2. Give user feedback (Getform part was removed as requested)
                     reviewText.value = "";
-                    reviewMessage.textContent = "Thank you! Your feedback has been sent.";
+                    reviewMessage.textContent = "Thank you! Your feedback has been saved.";
                     reviewMessage.style.opacity = 1;
                     setTimeout(() => { reviewMessage.style.opacity = 0; }, 4000);
 
@@ -761,19 +809,7 @@
                         createdAt: serverTimestamp()
                     });
 
-                    // 2. Send to Getform for email notification
-                    const formData = new FormData();
-                    formData.append('submission_title', title);
-                    formData.append('submission_content', content);
-                    formData.append('user', currentUserName);
-                    formData.append('userId', currentUserId);
-                    
-                    await fetch("https://getform.io/f/bolzexka", {
-                        method: "POST",
-                        body: formData,
-                    });
-
-                    // 3. Give user feedback
+                    // 2. Give user feedback (Getform part was removed as requested)
                     submissionTitle.value = "";
                     submissionContent.value = "";
                     submissionMessage.textContent = "Thank you! Your poem has been submitted.";
@@ -933,6 +969,13 @@
             --dark-accent-1: #A67C52;
             --dark-accent-2: #533C2C;
             --dark-highlight: #E2B27E;
+
+            /* ❤️ Red Verse Mode: “Crimson Ink” */
+            --red-bg: #1A0000;
+            --red-text: #F2E6E6;
+            --red-accent-1: #D90429;
+            --red-accent-2: #59000F;
+            --red-highlight: #FF476A;
             
             --c-bg: var(--light-bg);
             --c-text: var(--light-text);
@@ -947,6 +990,15 @@
              --c-accent-1: var(--dark-accent-1);
              --c-accent-2: var(--dark-accent-2); 
              --c-highlight: var(--dark-highlight);
+        }
+
+        /* --- Red Verse Theme Override --- */
+        html.red-verse-theme {
+            --c-bg: var(--red-bg);
+            --c-text: var(--red-text);
+            --c-accent-1: var(--red-accent-1);
+            --c-accent-2: var(--red-accent-2); 
+            --c-highlight: var(--red-highlight);
         }
 
         html {
@@ -992,7 +1044,8 @@
             transform: translateY(-5px);
             box-shadow: 0 10px 20px rgba(0,0,0,0.1);
         }
-        html.dark .poem-card:hover {
+        html.dark .poem-card:hover,
+        html.red-verse-theme .poem-card:hover {
              box-shadow: 0 10px 20px rgba(0,0,0,0.3);
         }
         
@@ -1027,7 +1080,8 @@
             background-color: var(--c-bg);
             box-shadow: 0 4px 10px rgba(0,0,0,0.1);
         }
-        html.dark #top-nav.scrolled {
+        html.dark #top-nav.scrolled,
+        html.red-verse-theme #top-nav.scrolled {
             box-shadow: 0 4px 10px rgba(0,0,0,0.3);
         }
         
