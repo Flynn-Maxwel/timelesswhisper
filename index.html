@@ -1,1 +1,488 @@
+<!--
+    *** DEVELOPER NOTE: FIX FOR 'auth/unauthorized-domain' ERROR ***
+    
+    If you are seeing a 'Firebase: Error (auth/unauthorized-domain)' error in your console,
+    it is NOT a bug in this code. It is a security setting in your Firebase project.
+
+    Here is the step-by-step fix:
+    1. Go to the Firebase Console: https://console.firebase.google.com/
+    2. Select your project: 'timelesswhispers-37f98'
+    3. Go to 'Authentication' (in the left-hand menu).
+    4. Go to the 'Settings' tab (at the top of the Authentication page).
+    5. Find the 'Authorized domains' list.
+    6. Click 'Add domain'.
+    7. Type in your website's domain: flynn-maxwel.github.io
+    8. Click 'Add'.
+
+    Wait 1-2 minutes, then reload your website. The error will be gone and sign-in will work.
+-->
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Timeless Whispers</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..900&family=Lora:ital,wght@0,400..700;1,400..700&family=Raleway:wght@300;400;500&family=Cinzel+Decorative:wght@700&display=swap" rel="stylesheet">
+    
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { 
+            getAuth, 
+            GoogleAuthProvider, 
+            signInWithPopup, 
+            signOut, 
+            onAuthStateChanged 
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getFirestore, 
+            collection, 
+            addDoc, 
+            query, 
+            where, 
+            getDocs, 
+            doc, 
+            getDoc, 
+            setDoc, 
+            serverTimestamp,
+            updateDoc,
+            arrayUnion,
+            arrayRemove,
+            onSnapshot,
+            orderBy
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // === CONFIG ===
+        const firebaseConfig = {
+            apiKey: "AIzaSyCsufbKfJcNZ40aDXDNXgHI-QphkFmXi-0",
+            authDomain: "timelesswhispers-37f98.firebaseapp.com",
+            projectId: "timelesswhispers-37f98",
+            storageBucket: "timelesswhispers-37f98.firebasestorage.app",
+            messagingSenderId: "632234683017",
+            appId: "1:632234683017:web:04f44be51fa2f88075b458",
+            measurementId: "G-PLN3R3YSCX"
+        };
+        const appId = firebaseConfig.projectId;
+
+        // === GLOBAL STATE ===
+        let db, auth;
+        let currentUserId = null;
+        let currentUserName = null;
+        let currentTheme = 'light';
+        let activeFilter = 'All';
+        let favoritePoemIds = [];
+        let currentOpenPoemId = null;
+
+        // === DATA ===
+        const poems = [
+            { id: 1, title: 'The Eyes of Her Soul', emotion: 'Love', content: `The secrets of her soul are reflected in her eyes,\nWhich are like two pools of liquid light.\nDeep within them lies an untold universe,\nA beautifully scrolled story of emotions.\n\nJust a quick look can captivate me\nAnd transport me to the depths of her stunning eyes.\nA glimpse of the calm and perceptive soul,\nA kaleidoscope of emotions and invisible colors.` },
+            { id: 2, title: 'In Her Presence', emotion: 'Love', content: `The sun is not as bright when I am not with her.\nIn her absence, the clouds are ominous and threatening.\nThe birds’ singing becomes less melodious\nWhen I am not around her.\n\nI feel like the walls close in on me\nWhen I’m not with her.\nWhispering her name keeps me going\nWhen I am desolate and without her.\n\nBut she gives me a boost when we are together.\nIn her presence, I possess the strength to move mountains.\nI am capable of withstand-ing anything\nWhen I am with her.\n\nWhen we are together,\nHer smile makes me feel so happy.\nThe angels sing her name\nWhen we are together.\n\nI fall in love all over again\nWhen we are together.` },
+            { id: 3, title: 'The Lips of Desire', emotion: 'Chaos', content: `The lips are sweet.\nI am not sure how to touch them.\nThat enslaves me with their grandeur.\nI wondered if I should see them near.\nUpper and lower are so tender.\nWhen together makes me happy.\nThey yearn to be perceived when drenched.\nThey want to be embraced.\nThe lips laugh.\nYour prongs make me look.\nThe lips that moan and the lips that sigh.\nIt takes me to a high.\nI want to have a child within my imprisoned wish.\nlaugh at the way they deceive.\nWords whisper, I want to hear them.\nI have to keep the memories in tact.\nThe lips of love and the lips of ire.\nThe lips were sweet and on fire.\nThere are lips of golden heavenly mire.\nI hope they don’t leave me in a bad situation.` },
+            { id: 4, title: 'When We First Met', emotion: 'Love', content: `The moment we first met,\nI knew we were meant to be.\nWe were destined to be together,\nAnd I knew you were the one.\n\nI had no idea who you were.\nAll I knew was your name.\nI had no idea what to do.\nI couldn’t decide who was at fault.\n\nI was aware of my attraction to you.\nYou seemed like a good person to me.\nThe butterflies were moving so quickly\nThat I had to stop and consider.\n\nNothing I did that day\nRevealed who I am to you.\nMy heart started to race\nEvery time you approached me.\n\nMy behavior wasn’t typical.\nMy responses weren’t sincere.\nI couldn’t control my heart,\nEven though I felt so awful.\n\nAnd you were the center of my attention\nWhen the group bid me farewell.\nI knew I was attempting to find out\nIf you shared my sentiments.\n\nWhen I saw your face,\nI liked you; however,\nIt might inave been the touch.\nMy heart was racing already.\n\nI was already too fond of you.\nThe moment we first met,\nI knew we were meant to be.\nI was aware that we were destined to be\nEnemies, lovers, and friends.` },
+            { id: 5, title: 'A Love Divinely Crafted', emotion: 'Hope', content: `Though I’ve always known that love would find me eventually,\nI had no idea that it would be you.\nIn the same way that you captivate me when I gaze into your eyes,\nYou caught me off guard and took me by surprise.\n\nIt is a fact that all excellent and flawless gifts\nCome from above.\nI was given you as a gorgeously wrapped gift,\nFull of intelligence, humor, talent, beauty, and love.\n\n“Learning to see an imperfect person perfectly\nIs more important than searching for the ideal person.”\nWe all have imperfections,\nBut from my perspective, you are flawless.\n\nI still enjoy the small things you do,\nLike hearing you laugh and noticing how your nose wrinkles,\nEven when you’re upset, as well.\nI’m confident that we can accomplish anything\nAs long as we’re traveling this path together.\n\nI occasionally question whether what we have is too good to be true.\nI’m afraid of losing you and of having my heart broken,\nBut ultimately, I put my trust in the one who created and perfected what I believe,\nBecause He will grant us our requests.\n\nAs they say, “Where your treasure is, your heart will be also.”\nGod alone knows what tomorrow will bring, so I may not know.\nAll I know is that you are my one and only.\n\nGod made everything beautiful, precious, and new,\nJust as beautiful and precious as the day will be,\nWhen I look into your eyes and say,\n“I Love You.”` },
+            { id: 6, title: 'The Essence of Love', emotion: 'Love', content: `To love is a journey through life, hand in hand,\nTo craft dreams that belong to just us two,\nTo labor together, side by side,\nAnd bask in the joy,\nAs one by one, our aspirations unfold.\n\nTo love is to uplift and inspire,\nWith warm smiles and heartfelt words of encouragement,\nTo carve out moments to connect,\nTo listen and nurture\nIn gentle, loving ways.\n\nTo love is to cherish someone unique,\nA steadfast presence through the passage of time,\nSharing both laughter and sorrow,\nAs a partner, a confidant, a beloved friend.\n\nTo love is to create cherished memories,\nOf moments that bring joy to our hearts,\nOf all the beautiful gifts\nThat life shared together offers. Love is the ultimate treasure.\n\nI’ve discovered the true essence\nOf sharing and caring,\nAnd new witnessing my dreams blossom;\nI’ve embraced the full meaning\nOf being in love\nBy simply being and loving you.` },
+            { id: 7, title: 'I Will Always Love You', emotion: 'Hope', content: `Even though you will occasionally annoy me and make me feel angry,\n“I will always love you.”\n\n“I will always love you, even though there are some hurtful things you might say\nThat will make me sad.”\n\nI will always love you,\nEven though I know that you will disappoint me with some foolish choices.\n\n“I will always love you, even though there are things you might do\nThat make me worry about you.”\n\n“I will always love you, even though there will be times\nWhen you will bring me to tears.”\n\n“You will make mistakes that I cannot forgive,\nBut I will always love you regardless.”\n\nI will always love you,\nDespite the lies you tell me to try to undermine my faith in you.\n\n“I want you to know that, despite the difficulties,\nDisagreements, and trials we will face in life,\n‘I will always love you,’ both now and in the future.”` },
+            { id: 8, title: 'In the Shadow of Your Presence', emotion: 'Silent Nights', content: `In a world where I’ve never asked for anything,\nI find myself in awe of how everything feels complete,\nFor you belong to me.\nYour presence alone fills my heart,\nAnd without you, this world loses its meaning.\nIt’s as if the universe conspired to bring us together,\nCrafting moments that shimmer with the essence of what could be.\nEach day unfolds like a page in a story\nThat I never knew I was longing to write,\nAnd you are the ink that brings it to life.\n\nIn my dreams, there exists a sacred space\nWhere it’s just you and me, untouched by anyone else.\nA realm where time stands still,\nAnd the outside world fades into a distant memory.\nOh, how I long for you to arrive!\nThe anticipation of your presence is a melody\nThat plays softly in my heart,\nA song that echoes through the corridors of my mind.\nAre our destinies woven together in this beautiful tapestry?\nEach thread a promise, each color a memory waiting to be made.\nIf our paths were to cross,\nI would fall hopelessly in-love with you,\nSurrendering to the gravity of your essence.\nEven if fate keeps us apart, my heart will still yearn for you,\nFor you are mine—a truth that resonates deep within my soul.\n\nYou wonder what I see in you amidst the beauty that surrounds us.\nLittle do you know, you are the most captivating sight of all.\nPlease, look at yourself through my eyes.\nBeneath your hair lies a radiant smile,\nA beacon of warmth that lights up even the darkest corners of my heart.\nYour eyes dance with a light that draws me in,\nSparkling with a thousand unspoken stories,\nEach one more enchanting than the last.\n\nWhat can I say about your lips,\nThe ones that whisper sweet names to me?\nThey hold the power to ignite a fire within me,\nA warmth that spreads through my veins like a gentle flame.\nAnd your heart—oh, how magnificent it is!\nIt beats with a rhythm that harmonizes with my own,\nA symphony of emotions that transcends the ordinary.\n\nPicture us, two hearts walking hand in hand,\nNavigating the world together,\nEach step a testament to our connection.\nWill the sky be clear, or will it rain?\nEven if the clouds gather, I would be by your side,\nFor you are my everything.\nIn the storm, I would find solace in your embrace,\nAnd in the sunshine, I would bask in the glow of your laughter.\n\Together, we would create a universe of our own,\nA sanctuary.` },
+            { id: 9, title: 'A Soul Shattered by Love', emotion: 'Loss', content: `How can I mend a shattered soul?\n504\nMy entire existence has crumbled.\nHow can I find solace in a new beginning,\nWhen the person I cherish is no longer present?\n\nMy thoughts are consumed by memories of you,\nOf all we’ve experienced, all we shared.\nI long for your touch and your comforting embrace,\nThe look in your eyes, the smile on your lips.\n\nMy dreams are filled with the tender kiss of yours.\nI wake up and weep for what I’ve lost.\nHow can I heal a broken heart,\nWhen my one true love and I are apart?\n\nMy heart is destined to love only you,\nIt refuses to let go, what should I do?\nOur moments together were rare and precious,\nBut I treasured them more than you could ever know.\n\nI love you, my angel, and always will.\nI felt love for you then, and I feel it still.` },
+            { id: 10, title: 'Under the Moonlit Spell', emotion: 'Love', content: `Beneath the glimmering moonlight,\nUnder a blanket of stars,\nI find myself intertwined with you\nIn a faraway place that feels like ours.\n\nThe world is silent,\nAnd all I can sense\nIs the soft rhythm of our shared breaths.\nYou have me enchanted, my heart tightly ensnared,\nLost in your essence, where true love is declared.\n\nYour lips graze my neck,\nIgniting a flame,\nEach gentle touch\nStokes my desire’s name.\n\nAs my body awakens,\nIt yearns for your caress,\nLonging for your embrace,\nCraving you more and more, I confess.\n\nWith every movement,\nA smile dances on my face,\nShould I whisper sweet nothings\nOr let passion take its place?\n\nYou tug at my hair,\nLifting me high,\nFloating on clouds,\nAs if we could soar through the sky.\n\nAs I shiver and tremble,\nOur hearts begin to race,\nIn this moonlit sanctuary,\nI’m yours in this space.` },
+        ];
+        const emotions = ['All', 'Favorites', 'Love', 'Loss', 'Hope', 'Healing', 'Chaos', 'Silent Nights'];
+
+        // === DOM ELEMENTS ===
+        const docElement = document.documentElement;
+        const body = document.body;
+        const topNav = document.getElementById('top-nav');
+        const emotionFiltersContainer = document.getElementById('emotion-filters');
+        const poemsGrid = document.getElementById('poems-grid');
+        const modal = document.getElementById('quick-preview-modal');
+        const modalContent = document.getElementById('modal-poem-content');
+        const modalCloseBtn = document.getElementById('modal-close-btn');
+        const themeToggleButton = document.getElementById('theme-toggle');
+        const navAuth = document.getElementById('nav-auth');
+        const loginBtn = document.getElementById('login-btn');
+        const logoutBtn = document.getElementById('logout-btn');
+        const userName = document.getElementById('user-name');
+        const feedbackAuthPrompt = document.getElementById('feedback-auth-prompt');
+        const feedbackForms = document.getElementById('feedback-forms');
+
+        // === SVG ICONS ===
+        const SunIcon = `<svg class="w-6 h-6" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m4.93 19.07 1.41-1.41"></path><path d="m17.66 6.34 1.41-1.41"></path></svg>`;
+        const MoonIcon = `<svg class="w-6 h-6" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></svg>`;
+        const HeartIconOutline = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 116.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z"></path></svg>`;
+        const HeartIconFilled = `<svg class="w-6 h-6" fill="var(--c-highlight)" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 116.364 6.364L12 20.364l-7.682-7.682a4.5 4.5 0 010-6.364z"></path></svg>`;
+        const ShareIcon = `<svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line></svg>`;
+
+        // === LISTENERS ===
+        let userFavoritesUnsubscribe = null;
+        let likesUnsubscribe = null;
+        let commentsUnsubscribe = null;
+
+        // === RENDER FUNCTIONS ===
+        function renderFilters() {
+            emotionFiltersContainer.innerHTML = emotions.map(emotion => `
+                <button data-filter="${emotion}" class="filter-btn py-2 px-5 rounded-full text-sm transition-all duration-300 ${activeFilter === emotion ? 'active text-[var(--c-bg)]' : 'border'}" style="${activeFilter === emotion ? `background-color: var(--c-accent-1); border-color: var(--c-accent-1);` : `border-color: var(--c-accent-2); color: var(--c-text);`}">
+                    ${emotion}
+                </button>
+            `).join('');
+            emotionFiltersContainer.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.onclick = () => {
+                    activeFilter = btn.dataset.filter;
+                    renderFilters();
+                    renderPoemsGrid();
+                };
+            });
+        }
+
+        function renderPoemsGrid() {
+            let filtered = poems;
+            if (activeFilter === 'Favorites') {
+                filtered = poems.filter(p => favoritePoemIds.includes(p.id));
+            } else if (activeFilter !== 'All') {
+                filtered = poems.filter(p => p.emotion === activeFilter);
+            }
+
+            if (filtered.length === 0 && activeFilter === 'Favorites') {
+                poemsGrid.innerHTML = `<p class="col-span-full text-center opacity-70">You haven't favorited any poems yet. Click the heart icon on a poem to save it here.</p>`;
+                return;
+            }
+
+            poemsGrid.innerHTML = filtered.map(poem => `
+                <div class="poem-card p-6 rounded-lg" style="background-color: var(--c-bg); border: 1px solid var(--c-accent-2);">
+                    <div class="flex justify-between items-start">
+                        <div class="cursor-pointer flex-grow" data-poem-id="${poem.id}">
+                            <h3 class="font-headline text-xl font-bold" style="color: var(--c-accent-1);">${poem.title}</h3>
+                            <p class="mt-2 opacity-70 italic">"${poem.content.split('\n')[0]}"</p>
+                            <p class="opacity-70 italic">"${poem.content.split('\n')[1] || ''}"</p>
+                        </div>
+                        <button class="favorite-btn p-2 -mr-2 -mt-2 opacity-50 hover:opacity-100 transition-opacity" data-poem-id="${poem.id}">
+                            ${favoritePoemIds.includes(poem.id) ? HeartIconFilled : HeartIconOutline}
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+
+            poemsGrid.querySelectorAll('[data-poem-id]').forEach(el => {
+                el.onclick = () => showPoemModal(el.dataset.poemId);
+            });
+            poemsGrid.querySelectorAll('.favorite-btn').forEach(btn => {
+                btn.onclick = e => {
+                    e.stopPropagation();
+                    toggleFavorite(btn.dataset.poemId, btn);
+                };
+            });
+        }
+
+        function showPoemModal(poemId) {
+            const poem = poems.find(p => p.id == poemId);
+            if (!poem) return;
+            currentOpenPoemId = poem.id;
+
+            modalContent.innerHTML = `
+                <div class="flex justify-between items-start gap-4">
+                    <div>
+                        <h2 class="font-headline text-3xl font-bold mb-2" style="color: var(--c-highlight);">${poem.title}</h2>
+                        <div class="mb-8"></div>
+                    </div>
+                    <div class="flex-shrink-0 flex items-center gap-4">
+                        <button id="shareButton" class="flex items-center gap-1 py-1 px-2 rounded-full text-sm transition-all opacity-70 hover:opacity-100" style="color: var(--c-highlight);">
+                            ${ShareIcon} Share
+                        </button>
+                        <div class="flex items-center gap-1 opacity-80">
+                            <button id="likeButton" class="py-1 px-2 rounded-full text-sm transition-all disabled:opacity-60" style="color: var(--c-highlight);">
+                                ❤️ Like
+                            </button>
+                            <span id="likeCount" class="text-sm font-bold" style="color: var(--c-highlight);">0</span>
+                        </div>
+                        <button class="favorite-btn p-2 opacity-50 hover:opacity-100 transition-opacity" data-poem-id="${poem.id}">
+                            ${favoritePoemIds.includes(poem.id) ? HeartIconFilled : HeartIconOutline}
+                        </button>
+                    </div>
+                </div>
+                <div class="whitespace-pre-wrap leading-relaxed">${poem.content.replace(/\n/g, '<br>')}</div>
+                
+                <div class="mt-12 pt-8 border-t" style="border-color: var(--c-accent-2)">
+                    <h3 class="font-headline text-xl font-bold mb-4" style="color: var(--c-accent-1);">Reflections</h3>
+                    
+                    <div id="comment-form-container" class="mb-6">
+                        <p id="comment-signin-prompt" class="opacity-70">
+                            <button class="font-bold underline" style="color: var(--c-accent-1);" onclick="googleLogin()">Sign in</button> to leave a reflection.
+                        </p>
+                        <div id="comment-form" class="hidden">
+                            <textarea id="comment" placeholder="Your thoughts..." class="w-full p-3 h-24 rounded-lg border-2 focus:ring-2 outline-none transition-shadow" style="background-color: var(--c-bg); border-color: var(--c-accent-2); color: var(--c-text); --tw-ring-color: var(--c-accent-1);"></textarea>
+                            <button onclick="postComment()" class="mt-2 font-bold py-2 px-5 rounded-full shadow-lg hover:opacity-90 transition-all text-sm" style="background-color: var(--c-accent-1); color: var(--c-bg);">Post</button>
+                        </div>
+                    </div>
+                    
+                    <div id="list" class="space-y-4 max-h-60 overflow-y-auto">
+                        <p class="opacity-50">Loading reflections...</p>
+                    </div>
+                </div>
+            `;
+            modal.classList.add('visible');
+
+            document.getElementById('shareButton').onclick = sharePoem;
+            modal.querySelector('.favorite-btn').onclick = e => {
+                e.stopPropagation();
+                toggleFavorite(e.currentTarget.dataset.poemId, e.currentTarget);
+            };
+
+            checkAuthForComments(auth.currentUser);
+            loadComments(poem.id);
+            loadLikes(poem.id);
+        }
+
+        function renderThemeToggle() {
+            themeToggleButton.innerHTML = currentTheme === 'light' ? MoonIcon : SunIcon;
+        }
+
+        // === CORE ===
+        function toggleTheme() {
+            body.classList.add('theme-transition');
+            setTimeout(() => {
+                docElement.classList.toggle('dark');
+                docElement.classList.toggle('light');
+                currentTheme = docElement.classList.contains('dark') ? 'dark' : 'light';
+                renderFilters();
+                renderPoemsGrid();
+                renderThemeToggle();
+                body.classList.remove('theme-transition');
+            }, 500);
+        }
+
+        // === AUTH ===
+        const provider = new GoogleAuthProvider();
+        window.googleLogin = () => signInWithPopup(auth, provider)
+            .then(r => saveUser(r.user))
+            .catch(e => console.error("Login error:", e));
+
+        window.googleLogout = () => signOut(auth)
+            .then(() => {
+                favoritePoemIds = [];
+                renderPoemsGrid();
+            });
+
+        async function saveUser(u) {
+            const ref = doc(db, "artifacts", appId, "users", u.uid);
+            await setDoc(ref, { name: u.displayName, email: u.email, photo: u.photoURL }, { merge: true });
+        }
+
+        // === FAVORITES ===
+        async function toggleFavorite(poemId, btn) {
+            if (!currentUserId) return googleLogin();
+            const id = parseInt(poemId);
+            const isFav = favoritePoemIds.includes(id);
+            const newFavs = isFav ? favoritePoemIds.filter(x => x !== id) : [...favoritePoemIds, id];
+            favoritePoemIds = newFavs;
+            updateAllFavoriteButtons(poemId, !isFav);
+
+            const ref = doc(db, "artifacts", appId, "users", currentUserId);
+            await setDoc(ref, { favoritePoemIds: isFav ? arrayRemove(poemId) : arrayUnion(poemId) }, { merge: true })
+                .catch(() => {
+                    favoritePoemIds = isFav ? [...favoritePoemIds, id] : favoritePoemIds.filter(x => x !== id);
+                    updateAllFavoriteButtons(poemId, isFav);
+                });
+        }
+
+        function updateAllFavoriteButtons(poemId, isFav) {
+            document.querySelectorAll(`.favorite-btn[data-poem-id="${poemId}"]`)
+                .forEach(b => b.innerHTML = isFav ? HeartIconFilled : HeartIconOutline);
+        }
+
+        // === LIKES ===
+        window.likePost = async () => {
+            if (!currentUserId) return googleLogin();
+            const btn = document.getElementById("likeButton");
+            btn.disabled = true;
+
+            const ref = collection(db, "artifacts", appId, "public", "data", "likes");
+            const q = query(ref, where("poemId", "==", currentOpenPoemId.toString()), where("userId", "==", currentUserId));
+            const snap = await getDocs(q);
+            if (!snap.empty) return;
+
+            await addDoc(ref, { poemId: currentOpenPoemId.toString(), userId: currentUserId, time: serverTimestamp() });
+        };
+
+        window.loadLikes = (poemId) => {
+            if (likesUnsubscribe) likesUnsubscribe();
+            const countEl = document.getElementById("likeCount");
+            const btn = document.getElementById("likeButton");
+            if (!countEl || !btn) return;
+
+            const q = query(collection(db, "artifacts", appId, "public", "data", "likes"), where("poemId", "==", poemId.toString()));
+            likesUnsubscribe = onSnapshot(q, snap => {
+                countEl.textContent = snap.size;
+                const userLiked = snap.docs.some(d => d.data().userId === currentUserId);
+                btn.disabled = userLiked || !currentUserId;
+                btn.textContent = userLiked ? "❤️ Liked" : (currentUserId ? "❤️ Like" : "❤️ Sign in to like");
+            });
+        };
+
+        // === COMMENTS ===
+        function checkAuthForComments(user) {
+            const form = document.getElementById('comment-form');
+            const prompt = document.getElementById('comment-signin-prompt');
+            if (!form || !prompt) return;
+            form.classList.toggle('hidden', !user);
+            prompt.classList.toggle('hidden', !!user);
+        }
+
+        window.postComment = async () => {
+            if (!currentUserId) return googleLogin();
+            const text = document.getElementById("comment").value.trim();
+            if (!text) return;
+
+            await addDoc(collection(db, "artifacts", appId, "public", "data", "comments"), {
+                poemID: currentOpenPoemId.toString(),
+                userID: currentUserId,
+                user: currentUserName,
+                text,
+                time: serverTimestamp()
+            });
+            document.getElementById("comment").value = "";
+        };
+
+        window.loadComments = (poemId) => {
+            if (commentsUnsubscribe) commentsUnsubscribe();
+            const list = document.getElementById('list');
+            if (!list) return;
+            list.innerHTML = "<p class='opacity-50'>Loading...</p>";
+
+            const q = query(
+                collection(db, "artifacts", appId, "public", "data", "comments"),
+                where("poemID", "==", poemId.toString()),
+                orderBy("time", "desc")
+            );
+
+            commentsUnsubscribe = onSnapshot(q, snap => {
+                const comments = snap.docs.map(d => d.data());
+                renderComments(comments);
+            }, () => list.innerHTML = "<p style='color: var(--c-highlight);'>Error loading reflections.</p>");
+        };
+
+        function renderComments(comments) {
+            const list = document.getElementById('list');
+            if (comments.length === 0) {
+                list.innerHTML = "<p class='opacity-50'>Be the first to leave a reflection.</p>";
+                return;
+            }
+            list.innerHTML = comments.map(c => {
+                const time = c.time ? new Date(c.time.seconds * 1000).toLocaleString() : 'Just now';
+                return `
+                    <div class="border-l-2 pl-3" style="border-color: var(--c-accent-2);">
+                        <p class="leading-relaxed">${c.text}</p>
+                        <p class="text-sm opacity-60 mt-1">
+                            <strong>${c.user || 'Anonymous'}</strong> – <span class="text-xs">${time}</span>
+                        </p>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // === SHARE ===
+        window.sharePoem = () => {
+            const poem = poems.find(p => p.id == currentOpenPoemId);
+            if (!poem) return;
+            const url = `${window.location.origin}${window.location.pathname}?poem=${poem.id}#gallery`;
+            if (navigator.share) {
+                navigator.share({ title: poem.title, text: `Read "${poem.title}" on Timeless Whispers`, url });
+            } else {
+                navigator.clipboard.writeText(url).then(() => alert("Link copied!"));
+            }
+        };
+
+        // === INIT ===
+        function init() {
+            const app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+
+            loginBtn.onclick = googleLogin;
+            logoutBtn.onclick = googleLogout;
+            themeToggleButton.onclick = toggleTheme;
+            modalCloseBtn.onclick = closeModal;
+            modal.onclick = e => e.target === modal && closeModal();
+
+            function closeModal() {
+                modal.classList.remove('visible');
+                currentOpenPoemId = null;
+                [likesUnsubscribe, commentsUnsubscribe].forEach(fn => fn && fn());
+            }
+
+            renderFilters();
+            renderPoemsGrid();
+            renderThemeToggle();
+
+            onAuthStateChanged(auth, user => {
+                currentUserId = user?.uid || null;
+                currentUserName = user?.displayName?.split(' ')[0] || null;
+                userName.textContent = currentUserName ? `Hi, ${currentUserName}` : '';
+                navAuth.classList.toggle('signed-in', !!user);
+                feedbackAuthPrompt.classList.toggle('hidden', !!user);
+                feedbackForms.classList.toggle('hidden', !user);
+
+                if (user) {
+                    const ref = doc(db, "artifacts", appId, "users", user.uid);
+                    if (userFavoritesUnsubscribe) userFavoritesUnsubscribe();
+                    userFavoritesUnsubscribe = onSnapshot(ref, snap => {
+                        favoritePoemIds = snap.exists() ? (snap.data().favoritePoemIds || []).map(Number) : [];
+                        renderPoemsGrid();
+                    });
+                } else {
+                    favoritePoemIds = [];
+                    if (userFavoritesUnsubscribe) userFavoritesUnsubscribe();
+                    renderPoemsGrid();
+                }
+
+                checkAuthForComments(user);
+                if (currentOpenPoemId) {
+                    loadLikes(currentOpenPoemId);
+                    loadComments(currentOpenPoemId);
+                }
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+
+    <style>
+        :root { --light-bg: #FFF9F2; --light-text: #3B2F2F; --light-accent-1: #A67C52; --light-accent-2: #D4BFAA; --light-highlight: #6B4226;
+                --dark-bg: #1C1A18; --dark-text: #E8DCCF; --dark-accent-1: #A67C52; --dark-accent-2: #533C2C; --dark-highlight: #E2B27E;
+                --c-bg: var(--light-bg); --c-text: var(--light-text); --c-accent-1: var(--light-accent-1); --c-accent-2: var(--light-accent-2); --c-highlight: var(--light-highlight); }
+        html.dark { --c-bg: var(--dark-bg); --c-text: var(--dark-text); --c-accent-1: var(--dark-accent-1); --c-accent-2: var(--dark-accent-2); --c-highlight: var(--dark-highlight); }
+        body { background-color: var(--c-bg); color: var(--c-text); transition: background-color 0.5s, color 0.5s; }
+        .font-headline { font-family: 'Playfair Display', serif; }
+        .font-body { font-family: 'Raleway', sans-serif; }
+        .font-writing { font-family: 'Lora', serif; }
+        .poem-card { transition: transform 0.3s ease, box-shadow 0.3s ease; }
+        .poem-card:hover { transform: translateY(-5px); box-shadow: 0 10px 20px rgba(0,0,0,0.1); }
+        html.dark .poem-card:hover { box-shadow: 0 10px 20px rgba(0,0,0,0.3); }
+        #quick-preview-modal { opacity: 0; pointer-events: none; transition: opacity 0.3s ease; }
+        #quick-preview-modal.visible { opacity: 1; pointer-events: auto; }
+        #quick-preview-modal .modal-content { transition: transform 0.4s ease-out; transform: scale(0.95); }
+        #quick-preview-modal.visible .modal-content { transform: scale(1); }
+        #top-nav { background-color: transparent; transition: background-color 0.3s ease; }
+        #top-nav.scrolled { background-color: var(--c-bg); box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        html.dark #top-nav.scrolled { box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+        #nav-auth #login-btn { display: inline-block; }
+        #nav-auth #user-info, #nav-auth #logout-btn { display: none; }
+        #nav-auth.signed-in #login-btn { display: none; }
+        #nav-auth.signed-in #user-info, #nav-auth.signed-in #logout-btn { display: inline-block; }
+        .feedback-form-field { background-color: var(--c-bg); border-color: var(--c-accent-2); color: var(--c-text); --tw-ring-color: var(--c-accent-1); }
+        input:-webkit-autofill, textarea:-webkit-autofill { -webkit-box-shadow: 0 0 0 50px var(--c-bg) inset !important; -webkit-text-fill-color: var(--c-text) !important; }
+        body.theme-transition { transition: filter 0.5s ease-in-out; filter: blur(5px); }
+    </style>
+</head>
+<body class="font-body">
+    <!-- [HTML BODY SAME AS ORIGINAL — NO CHANGES NEEDED] -->
+    <!-- Paste the original <nav>, <main>, <footer>, modal, etc. here -->
+    <!-- Only the <script> and <style> were updated above -->
+</body>
+</html>
 
