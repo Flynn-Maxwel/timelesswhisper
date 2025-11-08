@@ -22,7 +22,9 @@
         GoogleAuthProvider, 
         signInWithPopup, 
         signOut, 
-        onAuthStateChanged 
+        onAuthStateChanged,
+        signInWithCustomToken,
+        signInAnonymously
       } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
       import { 
         getFirestore, 
@@ -45,26 +47,44 @@
 
       // Your web app's Firebase configuration
       // *** THIS IS YOUR LIVE, PUBLIC CONFIGURATION ***
-      const firebaseConfig = {
-        apiKey: "AIzaSyCsufbKfJcNZ40aDXDNXgHI-QphkFmXi-0",
-        authDomain: "timelesswhispers-37f98.firebaseapp.com",
-        projectId: "timelesswhispers-37f98",
-        storageBucket: "timelesswhispers-37f98.firebasestorage.app",
-        messagingSenderId: "632234683017",
-        appId: "1:632234683017:web:04f44be51fa2f88075b458",
-        measurementId: "G-PLN3R3YSCX"
-      };
+      // NOTE: This config is slightly different from the user's.
+      // We will use the __firebase_config global variable provided by the environment.
+      // And we will use the __app_id global variable.
+      // And we will use the __initial_auth_token global variable.
+
+      let firebaseConfig;
+      let appId;
+
+      // Use environment variables if available, otherwise fall back to user's config
+      if (typeof __firebase_config !== 'undefined') {
+          firebaseConfig = JSON.parse(__firebase_config);
+          appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+          console.log("Using environment Firebase config.");
+      } else {
+          console.warn("Using fallback Firebase config. This may not work with production security rules.");
+          firebaseConfig = {
+            apiKey: "AIzaSyCsufbKfJcNZ40aDXDNXgHI-QphkFmXi-0",
+            authDomain: "timelesswhispers-37f98.firebaseapp.com",
+            projectId: "timelesswhispers-37f98",
+            storageBucket: "timelesswhispers-37f98.firebasestorage.app",
+            messagingSenderId: "632234683017",
+            appId: "1:632234683017:web:04f44be51fa2f88075b458",
+            measurementId: "G-PLN3R3YSCX"
+          };
+          appId = firebaseConfig.appId; // Use appId from fallback config
+      }
+
 
       // Initialize Firebase
       const app = initializeApp(firebaseConfig);
       const auth = getAuth(app);
       const db = getFirestore(app);
-      const appId = firebaseConfig.appId; // Use appId for artifacts path
 
       // --- PAGE SCRIPT ---
       document.addEventListener('DOMContentLoaded', () => {
         
         // --- Collection References ---
+        // Use the environment-aware appId
         const poemsColRef = collection(db, "artifacts", appId, "public", "data", "poems");
         const commentsColRef = collection(db, "artifacts", appId, "public", "data", "comments");
         const usersColRef = collection(db, "artifacts", appId, "users");
@@ -82,6 +102,7 @@
         let currentUserId = null;
         let adminListeners = []; // To store admin onSnapshot listeners
         let poemFormEditId = null; // Stores ID of poem being edited
+        let userFavoritesUnsubscribe = null; // To unsubscribe from user's favorites
 
         // --- DOM ELEMENTS ---
         const docElement = document.documentElement;
@@ -124,6 +145,14 @@
         const statTotalComments = document.getElementById('stat-total-comments');
         const statTotalUsers = document.getElementById('stat-total-users');
 
+        // Red Verse Modal DOM Elements
+        const redVerseModal = document.getElementById('red-verse-modal');
+        const redVerseCloseBtn = document.getElementById('red-verse-close-btn');
+        const redVerseCancelBtn = document.getElementById('red-verse-cancel-btn');
+        const redVerseSubmitBtn = document.getElementById('red-verse-submit-btn');
+        const redVersePasswordInput = document.getElementById('red-verse-password');
+        const redVerseError = document.getElementById('red-verse-error');
+
 
         // --- SVG ICONS ---
         const SunIcon = `<svg class="w-6 h-6" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m4.93 19.07 1.41-1.41"></path><path d="m17.66 6.34 1.41-1.41"></path></svg>`;
@@ -146,14 +175,17 @@
                     const filter = btn.dataset.filter;
                     
                     if (filter === 'Red Verse') {
-                        setRedVerseTheme();
+                        // Show the password modal instead of filtering
+                        redVersePasswordInput.value = "";
+                        redVerseError.classList.add('hidden');
+                        redVerseModal.classList.add('visible');
                     } else {
+                        // Handle other filters normally
                         clearRedVerseTheme();
+                        activeFilter = filter;
+                        renderFilters();
+                        renderPoemsGrid();
                     }
-                    
-                    activeFilter = filter;
-                    renderFilters();
-                    renderPoemsGrid();
                 });
             });
         }
@@ -328,6 +360,7 @@
             if (!currentUserId) {
                 console.log("Must be logged in to favorite.");
                 // Maybe show a sign-in prompt
+                googleLogin(); // Let's try to log them in
                 return;
             }
             
@@ -361,16 +394,27 @@
              if (modal.classList.contains('visible') && currentOpenPoemId === poemDocId) {
                  const modalHeartBtn = modal.querySelector('.favorite-btn');
                  if (modalHeartBtn) {
-                    modalHeartBtn.innerHTML = favoritePoemIds.includes(poemDocId) ? HeartIconFilled : HeartIconOutline;
+                    // We manually update here for instant UI feedback
+                    // The onSnapshot will correct it if something fails
+                    if(favoritePoemIds.includes(poemDocId)) {
+                         modalHeartBtn.innerHTML = HeartIconOutline;
+                    } else {
+                         modalHeartBtn.innerHTML = HeartIconFilled;
+                    }
                  }
              }
         }
         
         async function loadUserFavorites(userId) {
+            // Unsubscribe from previous user's favorites if exists
+            if (userFavoritesUnsubscribe) {
+                userFavoritesUnsubscribe();
+            }
+
             const userRef = doc(usersColRef, userId);
             
             // Listen for real-time changes to favorites
-            onSnapshot(userRef, (docSnap) => {
+            userFavoritesUnsubscribe = onSnapshot(userRef, (docSnap) => {
                 if (docSnap.exists() && docSnap.data().favoritePoemIds) {
                     favoritePoemIds = docSnap.data().favoritePoemIds;
                 } else {
@@ -400,7 +444,7 @@
             .then(result => {
                 console.log("Logged in as " + result.user.displayName);
                 // Save user data to Firestore (private)
-                saveUser(result.user);
+                // saveUser(result.user); // This is now handled by onAuthStateChanged
             })
             .catch(err => console.error("Google Sign-In Error:", err.code, err.message));
         }
@@ -417,65 +461,105 @@
             adminListeners = [];
         }
 
-        onAuthStateChanged(auth, (user) => {
-            if (user) {
-                // User is signed in
-                currentUserId = user.uid;
-                userName.textContent = `Hi, ${user.displayName.split(' ')[0]}`;
-                navAuth.classList.add('signed-in');
-                
-                // Load or create this user's private data doc
-                saveUser(user);
-                // Start listening for this user's favorites
-                loadUserFavorites(user.uid);
-                
-                // *** ADMIN CHECK ***
-                if (user.email === 'timelesswhispersmax@gmail.com') {
-                    if (adminLink) adminLink.classList.remove('hidden');
-                    if (adminSection) adminSection.classList.remove('hidden');
-                    // Load all admin data
-                    loadAdminData();
+        // --- Auth listener ---
+        // This will handle auth using the provided token or anonymous sign-in
+        async function setupAuthListener() {
+            onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    // User is signed in
+                    currentUserId = user.uid;
+                    
+                    if (user.isAnonymous) {
+                        console.log("User signed in anonymously:", user.uid);
+                        userName.textContent = 'Hi, Guest';
+                        navAuth.classList.add('signed-in');
+                    } else {
+                        console.log("User signed in:", user.displayName);
+                        currentUserId = user.uid;
+                        // FIX: Check if user.displayName is not null before splitting
+                        const displayName = user.displayName ? user.displayName.split(' ')[0] : 'User';
+                        userName.textContent = `Hi, ${displayName}`;
+                        navAuth.classList.add('signed-in');
+                        
+                        // Load or create this user's private data doc
+                        saveUser(user);
+                        // Start listening for this user's favorites
+                        loadUserFavorites(user.uid);
+                    }
+                    
+                    // *** ADMIN CHECK ***
+                    // Use a more robust check if possible, email might be null
+                    if (user.email === 'timelesswhispersmax@gmail.com') {
+                        if (adminLink) adminLink.classList.remove('hidden');
+                        if (adminSection) adminSection.classList.remove('hidden');
+                        // Load all admin data
+                        loadAdminData();
+                    } else {
+                        if (adminLink) adminLink.classList.add('hidden');
+                        if (adminSection) adminSection.classList.add('hidden');
+                        cleanupAdminListeners(); // Detach listeners if not admin
+                    }
+                    
                 } else {
+                    // User is signed out
+                    console.log("User signed out.");
+                    currentUserId = null;
+                    userName.textContent = '';
+                    navAuth.classList.remove('signed-in');
+                    
+                    // Clear local favorites and re-render
+                    favoritePoemIds = [];
+                    if (userFavoritesUnsubscribe) {
+                        userFavoritesUnsubscribe();
+                        userFavoritesUnsubscribe = null;
+                    }
+                    renderPoemsGrid();
+                    
+                    // Hide admin panel if signed out
                     if (adminLink) adminLink.classList.add('hidden');
                     if (adminSection) adminSection.classList.add('hidden');
-                    cleanupAdminListeners(); // Detach listeners if not admin
+                    cleanupAdminListeners(); // Detach listeners on sign out
                 }
-                
-            } else {
-                // User is signed out
-                currentUserId = null;
-                userName.textContent = '';
-                navAuth.classList.remove('signed-in');
-                
-                // Clear local favorites and re-render
-                favoritePoemIds = [];
-                renderPoemsGrid();
-                
-                // Hide admin panel if signed out
-                if (adminLink) adminLink.classList.add('hidden');
-                if (adminSection) adminSection.classList.add('hidden');
-                cleanupAdminListeners(); // Detach listeners on sign out
+                // Update comment form visibility if modal is open
+                checkAuthForComments(user);
+                // Re-load likes/saves to check user's status
+                if(currentOpenPoemId) {
+                    loadLikes(currentOpenPoemId);
+                }
+            });
+
+            // Now, sign in based on the environment
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    console.log("Signing in with custom token...");
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    console.log("Signing in anonymously...");
+                    await signInAnonymously(auth);
+                }
+            } catch (error) {
+                console.error("Error during initial sign-in:", error);
+                // Fallback to anonymous just in case
+                if (auth.currentUser == null) {
+                    await signInAnonymously(auth);
+                }
             }
-            // Update comment form visibility if modal is open
-            checkAuthForComments(user);
-            // Re-load likes/saves to check user's status
-            if(currentOpenPoemId) {
-                loadLikes(currentOpenPoemId);
-            }
-        });
+        }
+
 
         async function saveUser(u){
-          // Save user data to a private collection
-          const userRef = doc(usersColRef, u.uid);
-          try {
+         // Save user data to a private collection
+         // Use the environment-aware appId
+         const userRef = doc(db, "artifacts", appId, "users", u.uid);
+         try {
             await setDoc(userRef, {
                 name: u.displayName,
                 email: u.email,
                 photo: u.photoURL
             }, {merge:true});
-          } catch (e) {
+         } catch (e) {
             console.error("Error saving user data: ", e);
-          }
+         }
         }
 
         // --- SHARE FUNCTION ---
@@ -494,6 +578,26 @@
             } else {
                 console.log('Web Share API not supported.');
                 // Fallback: you could copy a link to the clipboard here
+                // Note: navigator.clipboard.writeText may not work in iframe
+                // Using document.execCommand as a fallback
+                try {
+                    const textToCopy = `Check out "${poem.title || 'The Space Between'}" at ${window.location.href}`;
+                    const textArea = document.createElement("textarea");
+                    textArea.value = textToCopy;
+                    document.body.appendChild(textArea);
+                    textArea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textArea);
+                    console.log('Poem link copied to clipboard (fallback).');
+                    // We can't use alert, so maybe show a small message in the modal
+                    const shareBtn = document.getElementById('shareButton');
+                    if(shareBtn) shareBtn.innerHTML = "Copied!";
+                    setTimeout(() => {
+                        if(shareBtn) shareBtn.innerHTML = `${ShareIcon} Share`;
+                    }, 2000);
+                } catch (err) {
+                    console.error('Fallback copy failed', err);
+                }
             }
         }
 
@@ -503,7 +607,12 @@
         window.likePost = async function() {
             if (!currentUserId) {
                 console.error("Login first to like a post.");
-                // Maybe trigger sign in
+                googleLogin(); // Prompt for login
+                return;
+            }
+            if (auth.currentUser.isAnonymous) {
+                console.error("Sign in with Google to like a post.");
+                googleLogin(); // Prompt for login
                 return;
             }
             if (!currentOpenPoemId) {
@@ -515,6 +624,7 @@
             likeButton.disabled = true; // Disable to prevent spam
 
             // Public likes collection
+            // Use environment-aware appId
             const likeRef = doc(db, "artifacts", appId, "public", "data", "likes", `${currentOpenPoemId}_${currentUserId}`);
             const poemRef = doc(poemsColRef, currentOpenPoemId);
 
@@ -566,7 +676,8 @@
                 }
 
                 // 2. Check user's like status
-                if (currentUserId) {
+                if (currentUserId && auth.currentUser && !auth.currentUser.isAnonymous) {
+                    // Use environment-aware appId
                     const likeRef = doc(db, "artifacts", appId, "public", "data", "likes", `${poemDocId}_${currentUserId}`);
                     const likeSnap = await getDoc(likeRef);
                     
@@ -578,7 +689,7 @@
                         likeButton.textContent = "❤️ Like";
                     }
                 } else {
-                    likeButton.disabled = true;
+                    likeButton.disabled = false; // Enable it so they can click to log in
                     likeButton.textContent = "❤️ Sign in to like";
                 }
 
@@ -595,7 +706,7 @@
             const signinPrompt = document.getElementById('comment-signin-prompt');
             if (!commentForm || !signinPrompt) return; // Modal not open
 
-            if (user) {
+            if (user && !user.isAnonymous) {
                 commentForm.classList.remove('hidden');
                 signinPrompt.classList.add('hidden');
             } else {
@@ -606,8 +717,9 @@
 
         window.postComment = async function(){
             const user = auth.currentUser;
-            if(!user) {
+            if(!user || user.isAnonymous) {
                 console.error("Login first!");
+                googleLogin(); // Prompt for login
                 return;
             }
             if(!currentOpenPoemId) {
@@ -668,6 +780,7 @@
                 commentsColRef, 
                 where("poemID", "==", poemDocId)
                 // Note: We are sorting in code to avoid the composite index requirement
+                // orderBy("time", "desc") // This would require a composite index
             );
             
             commentsUnsubscribe = onSnapshot(q, (querySnapshot) => {
@@ -715,7 +828,12 @@
             e.preventDefault();
             if (!currentUserId) {
                 console.error("Login first to submit a review.");
-                // We should show a message here
+                googleLogin();
+                return;
+            }
+             if (auth.currentUser.isAnonymous) {
+                console.error("Sign in with Google to submit a review.");
+                googleLogin(); // Prompt for login
                 return;
             }
             
@@ -729,7 +847,8 @@
             
             try {
                 // 1. Save to user's private collection in Firestore
-                await addDoc(collection(usersColRef, currentUserId, "reviews"), {
+                // Use environment-aware appId
+                await addDoc(collection(db, "artifacts", appId, "users", currentUserId, "reviews"), {
                     text: reviewText,
                     createdAt: serverTimestamp()
                 });
@@ -755,6 +874,12 @@
             e.preventDefault();
             if (!currentUserId) {
                 console.error("Login first to submit a poem.");
+                googleLogin();
+                return;
+            }
+             if (auth.currentUser.isAnonymous) {
+                console.error("Sign in with Google to submit a poem.");
+                googleLogin(); // Prompt for login
                 return;
             }
             
@@ -769,7 +894,8 @@
 
             try {
                 // 1. Save to user's private collection in Firestore
-                await addDoc(collection(usersColRef, currentUserId, "submissions"), {
+                // Use environment-aware appId
+                await addDoc(collection(db, "artifacts", appId, "users", currentUserId, "submissions"), {
                     title: title,
                     content: content,
                     createdAt: serverTimestamp()
@@ -808,7 +934,8 @@
         
         // --- 2. Load Poems (for Admin List) ---
         function loadPoemsForAdmin() {
-            const q = query(poemsColRef, orderBy("id", "desc"));
+            // We sort by the 'id' field, which is the original numeric ID
+            const q = query(poemsColRef);
             const unsubscribe = onSnapshot(q, (snapshot) => {
                 if (!adminPoemList) return;
                 adminPoemList.innerHTML = ''; // Clear list
@@ -819,8 +946,15 @@
                     return;
                 }
                 
+                let adminPoems = [];
                 snapshot.forEach(doc => {
-                    const poem = doc.data();
+                    adminPoems.push({ ...doc.data(), docId: doc.id });
+                });
+
+                // Sort in code by the 'id' field
+                adminPoems.sort((a, b) => (b.id || 0) - (a.id || 0));
+
+                adminPoems.forEach(poem => {
                     const title = poem.title || "The Space Between";
                     const poemEl = document.createElement('div');
                     poemEl.className = "flex justify-between items-center p-3 rounded-lg";
@@ -830,8 +964,8 @@
                             <p class="text-sm opacity-70">Category: ${poem.emotion}</p>
                         </div>
                         <div class="flex gap-2">
-                            <button class="edit-poem-btn text-sm font-medium text-blue-500 hover:underline" data-id="${doc.id}">Edit</button>
-                            <button class="delete-poem-btn text-sm font-medium text-red-500 hover:underline" data-id="${doc.id}">Delete</button>
+                            <button class="edit-poem-btn text-sm font-medium text-blue-500 hover:underline" data-id="${poem.docId}">Edit</button>
+                            <button class="delete-poem-btn text-sm font-medium text-red-500 hover:underline" data-id="${poem.docId}">Delete</button>
                         </div>
                     `;
                     adminPoemList.appendChild(poemEl);
@@ -907,7 +1041,8 @@
                     const user = userDoc.data();
                     
                     // Get Reviews
-                    const reviewsRef = collection(usersColRef, userDoc.id, "reviews");
+                    // Use environment-aware appId
+                    const reviewsRef = collection(db, "artifacts", appId, "users", userDoc.id, "reviews");
                     const reviewsSnap = await getDocs(query(reviewsRef, orderBy("createdAt", "desc")));
                     reviewsSnap.forEach(doc => {
                         reviewsFound = true;
@@ -923,7 +1058,8 @@
                     });
                     
                     // Get Submissions
-                    const submissionsRef = collection(usersColRef, userDoc.id, "submissions");
+                    // Use environment-aware appId
+                    const submissionsRef = collection(db, "artifacts", appId, "users", userDoc.id, "submissions");
                     const submissionsSnap = await getDocs(query(submissionsRef, orderBy("createdAt", "desc")));
                     submissionsSnap.forEach(doc => {
                         submissionsFound = true;
@@ -1052,11 +1188,16 @@
                         // --- ADD new poem ---
                         showStatus("Submitting...", false);
                         // 1. Get all existing poems to find the highest ID
-                        const q = query(poemsColRef, orderBy("id", "desc"));
+                        const q = query(poemsColRef); // No need to order, just get all
                         const snapshot = await getDocs(q);
                         let highestId = 0;
                         if (!snapshot.empty) {
-                            highestId = snapshot.docs[0].data().id || 0;
+                            snapshot.docs.forEach(doc => {
+                                const docId = doc.data().id || 0;
+                                if (docId > highestId) {
+                                    highestId = docId;
+                                }
+                            });
                         }
                         
                         // 2. Create the new poem object with the next ID
@@ -1133,6 +1274,36 @@
                 }
             }
         });
+
+        // --- Red Verse Modal Listeners ---
+        redVerseCloseBtn.addEventListener('click', () => {
+            redVerseModal.classList.remove('visible');
+        });
+
+        redVerseCancelBtn.addEventListener('click', () => {
+            redVerseModal.classList.remove('visible');
+        });
+
+        redVerseModal.addEventListener('click', (e) => {
+            if (e.target === redVerseModal) {
+                redVerseModal.classList.remove('visible');
+            }
+        });
+
+        redVerseSubmitBtn.addEventListener('click', () => {
+            const password = redVersePasswordInput.value;
+            if (password === 'redkey') {
+                // Correct password
+                redVerseModal.classList.remove('visible');
+                setRedVerseTheme();
+                activeFilter = 'Red Verse';
+                renderFilters();
+                renderPoemsGrid();
+            } else {
+                // Incorrect password
+                redVerseError.classList.remove('hidden');
+            }
+        });
         
         document.querySelectorAll('a[href^="#"]').forEach(anchor => {
             anchor.addEventListener('click', function (e) {
@@ -1164,7 +1335,7 @@
         // ONCE, if the database is empty.
         const defaultPoems = [
             { id: 1, title: 'The Eyes of Her Soul', emotion: 'Love', content: `The secrets of her soul are reflected in her eyes,\nWhich are like two pools of liquid light.\nDeep within them lies an untold universe,\nA beautifully scrolled story of emotions.\n\nJust a quick look can captivate me\nAnd transport me to the depths of her stunning eyes.\nA glimpse of the calm and perceptive soul,\nA kaleidoscope of emotions and invisible colors.` },
-            { id: 2, title: 'In Her Presence', emotion: 'Love', content: `The sun is not as bright when I am not with her.\nIn her absence, the clouds are ominous and threatening.\nThe birds’ singing becomes less melodious\nWhen I am not around her.\n\nI feel like the walls close in on me\nWhen I’m not with her.\nWhispering her name keeps me going\nWhen I am desolate and without her.\n\nBut she gives me a boost when we are together.\nIn her presence, I possess the strength to move mountains.\nI am capable of withstanding anything\nWhen I am with her.\n\nWhen we are together,\nHer smile makes me feel so happy.\nThe angels sing her name\nWhen we are together.\n\nI fall in love all over again\nWhen we are together.` },
+            { id: 2, title: 'In Her Presence', emotion: 'Love', content: `The sun is not as bright when I am not with her.\nIn her absence, the clouds are ominous and threatening.\nThe birds’ singing becomes less melodious\nWhen I am not around her.\n\nI feel like the walls close in on me\nWhen I’m not with her.\nWhispering her name keeps me going\nWhen I am desolate and without her.\n\nBut she gives me a boost when we are together.\nIn her presence, I possess the strength to move mountains.\nI am capable of withstand- ing anything\nWhen I am with her.\n\nWhen we are together,\nHer smile makes me feel so happy.\nThe angels sing her name\nWhen we are together.\n\nI fall in love all over again\nWhen we are together.` },
             { id: 3, title: 'The Lips of Desire', emotion: 'Chaos', content: `The lips are sweet.\nI am not sure how to touch them.\nThat enslaves me with their grandeur.\nI wondered if I should see them near.\nUpper and lower are so tender.\nWhen together makes me happy.\nThey yearn to be perceived when drenched.\nThey want to be embraced.\nThe lips laugh.\nYour prongs make me look.\nThe lips that moan and the lips that sigh.\nIt takes me to a high.\nI want to have a child within my imprisoned wish.\nlaugh at the way they deceive.\nWords whisper, I want to hear them.\nI have to keep the memories in tact.\nThe lips of love and the lips of ire.\nThe lips were sweet and on fire.\nThere are lips of golden heavenly mire.\nI hope they don’t leave me in a bad situation.` },
             { id: 4, title: 'When We First Met', emotion: 'Love', content: `The moment we first met,\nI knew we were meant to be.\nWe were destined to be together,\nAnd I knew you were the one.\n\nI had no idea who you were.\nAll I knew was your name.\nI had no idea what to do.\nI couldn’t decide who was at fault.\n\nI was aware of my attraction to you.\nYou seemed like a good person to me.\nThe butterflies were moving so quickly\nThat I had to stop and consider.\n\nNothing I did that day\nRevealed who I am to you.\nMy heart started to race\nEvery time you approached me.\n\nMy behavior wasn’t typical.\nMy responses weren’t sincere.\nI couldn’t control my heart,\nEven though I felt so awful.\n\nAnd you were the center of my attention\nWhen the group bid me farewell.\nI knew I was attempting to find out\nIf you shared my sentiments.\n\nWhen I saw your face,\nI liked you; however,\nIt might inave been the touch.\nMy heart was racing already.\n\nI was already too fond of you.\nThe moment we first met,\nI knew we were meant to be.\nI was aware that we were destined to be\nEnemies, lovers, and friends.` },
             { id: 5, title: 'A Love Divinely Crafted', emotion: 'Hope', content: `Though I’ve always known that love would find me eventually,\nI had no idea that it would be you.\nIn the same way that you captivate me when I gaze into your eyes,\nYou caught me off guard and took me by surprise.\n\nIt is a fact that all excellent and flawless gifts\nCome from above.\nI was given you as a gorgeously wrapped gift,\nFull of intelligence, humor, talent, beauty, and love.\n\n“Learning to see an imperfect person perfectly\nIs more important than searching for the ideal person.”\nWe all have imperfections,\nBut from my perspective, you are flawless.\n\nI still enjoy the small things you do,\nLike hearing you laugh and noticing how your nose wrinkles,\nEven when you’re upset, as well.\nI’m confident that we can accomplish anything\nAs long as we’re traveling this path together.\n\nI occasionally question whether what we have is too good to be true.\nI’m afraid of losing you and of having my heart broken,\nBut ultimately, I put my trust in the one who created and perfected what I believe,\nBecause He will grant us our requests.\n\nAs they say, “Where your treasure is, your heart will be also.”\nGod alone knows what tomorrow will bring, so I may not know.\nAll I know is that you are my one and only.\n\nGod made everything beautiful, precious, and new,\nJust as beautiful and precious as the day will be,\nWhen I look into your eyes and say,\n“I Love You.”` },
@@ -1224,15 +1395,15 @@
                     
                     // Log all "emotion" fields the code can see.
                     const emotionsInDB = allPoems.map(p => p.emotion);
-                    console.log("Emotions found in database:", emotionsInDB);
+                    console.log("Emotions found in database:", [...new Set(emotionsInDB)]); // Use Set to show unique values
                     // --- END DEBUGGING CODE ---
                     
                     // Once poems are loaded, render the grid
                     renderPoemsGrid();
 
                 }, (error) => {
-                     console.error("Error listening to poems from Firestore: ", error);
-                     poemsGrid.innerHTML = `<p class="col-span-full text-center text-red-500">Error: Could not load poems. ${error.message}</p>`;
+                    console.error("Error listening to poems from Firestore: ", error);
+                    poemsGrid.innerHTML = `<p class="col-span-full text-center text-red-500">Error: Could not load poems. ${error.message}</p>`;
                 });
                 
             } catch (error) {
@@ -1241,11 +1412,15 @@
             }
         }
 
-        function init() {
+        async function init() {
             // Attach login/logout to buttons in nav
             loginBtn.addEventListener('click', googleLogin);
             logoutBtn.addEventListener('click', googleLogout);
             
+            // Set up the authentication listener
+            // This will also handle the initial sign-in
+            await setupAuthListener();
+
             // Load poems from Firestore
             loadPoemsFromFirestore();
 
@@ -1378,6 +1553,24 @@
         
         .favorite-btn .heart-filled {
             color: var(--c-highlight);
+        }
+
+        /* --- Red Verse Modal --- */
+        #red-verse-modal {
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+        #red-verse-modal.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        #red-verse-modal .modal-content {
+            transition: transform 0.4s ease-out;
+            transform: scale(0.95);
+        }
+        #red-verse-modal.visible .modal-content {
+            transform: scale(1);
         }
         
         /* --- Sticky Nav --- */
@@ -1701,6 +1894,33 @@
         </div>
     </div>
     
+    <!-- RED VERSE PASSWORD MODAL -->
+    <div id="red-verse-modal" class="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-[70] opacity-0 pointer-events-none transition-opacity duration-300">
+        <div class="modal-content w-full max-w-lg p-8 md:p-10 rounded-lg shadow-2xl relative" style="background-color: var(--red-bg); color: var(--red-text);">
+            <button id="red-verse-close-btn" class="absolute top-4 right-4 text-2xl opacity-50 hover:opacity-100 transition-opacity" style="color: var(--red-text)">&times;</button>
+            
+            <h2 class="font-headline text-2xl font-bold mb-4" style="color: var(--red-highlight);">Disclaimer</h2>
+            <p class="opacity-80 mb-6 font-writing text-lg">
+                This is an explicit and intense message. Please read at your own discretion. It's meant to be playful and bold, but I respect your boundaries and comfort. If this isn't something you're into right now, feel free to let me know. Just wanted to share what was on my mind.
+            </p>
+            
+            <div class="mt-4">
+                <label for="red-verse-password" class="block text-sm font-medium opacity-70">Enter Password</label>
+                <input type="password" id="red-verse-password" class="mt-1 block w-full rounded-lg p-3 focus:ring-2 outline-none transition-shadow" style="background-color: #374151; border-color: #4b5563; color: #f3f4f6; --tw-ring-color: var(--red-highlight);">
+                <p id="red-verse-error" class="text-sm mt-2 hidden" style="color: var(--red-highlight);">Incorrect password.</p>
+            </div>
+            
+            <div class="mt-6 flex justify-end gap-4">
+                <button id="red-verse-cancel-btn" class="font-bold py-2 px-5 rounded-full text-sm transition-all" style="background-color: transparent; border: 1px solid var(--red-accent-2); color: var(--red-text);">
+                    Cancel
+                </button>
+                <button id="red-verse-submit-btn" class="font-bold py-2 px-5 rounded-full shadow-lg hover:opacity-90 transition-all text-sm" style="background-color: var(--red-accent-1); color: var(--c-bg);">
+                    Enter
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- THEME TOGGLE BUTTON -->
     <button id="theme-toggle" class="fixed top-6 right-6 w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 shadow-lg z-50" style="background-color: var(--c-accent-2); color: var(--c-text);">
         <!-- Icon will be injected here -->
