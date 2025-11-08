@@ -678,7 +678,7 @@
                 // 2. Check user's like status
                 if (currentUserId && auth.currentUser && !auth.currentUser.isAnonymous) {
                     // Use environment-aware appId
-                    const likeRef = doc(db, "artifacts", appId, "public", "data", "likes", `${poemDocId}_${currentUserId}`);
+                    const likeRef = doc(db, "artifacts", appId, "public", "data", "likes", `${currentOpenPoemId}_${currentUserId}`);
                     const likeSnap = await getDoc(likeRef);
                     
                     if (likeSnap.exists()) {
@@ -1317,13 +1317,7 @@
             }); 
         });
         
-        window.addEventListener('scroll', () => {
-            if (window.scrollY > 50) {
-                topNav.classList.add('scrolled');
-            } else {
-                topNav.classList.remove('scrolled');
-            }
-        });
+        // Removed scroll listener for nav bar
         
         // Submission Form Listeners
         document.getElementById('review-form').addEventListener('submit', handleReviewSubmit);
@@ -1573,17 +1567,51 @@
             transform: scale(1);
         }
         
-        /* --- Sticky Nav --- */
+        /* --- Floating Nav --- */
         #top-nav {
-            background-color: transparent;
-            transition: background-color 0.3s ease;
+            /* New properties for Dynamic Island effect */
+            max-width: 270px; /* Adjusted for title + padding */
+            overflow: hidden;
+            white-space: nowrap;
+            /* Springy transition for the container */
+            transition: max-width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1), 
+                        background-color 0.5s, 
+                        color 0.5s, 
+                        box-shadow 0.5s;
+            /* Existing properties */
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
         }
-        #top-nav.scrolled {
-            background-color: var(--c-bg);
-            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        #top-nav > div { /* The inner flex container */
+            gap: 0;
+            /* Springy transition for the gap */
+            transition: gap 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
         }
-        html.dark #top-nav.scrolled, html.red-verse-theme #top-nav.scrolled {
-            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        .nav-expandable-content {
+            max-width: 0px;
+            opacity: 0;
+            transform: translateX(-20px);
+            overflow: hidden;
+            /* Springy and delayed for content */
+            transition: max-width 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.1s, 
+                        opacity 0.4s ease 0.2s, /* Fade in slightly after */
+                        transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.1s;
+            white-space: nowrap;
+        }
+
+        #top-nav:hover {
+            max-width: 700px; /* A large value to fit everything */
+        }
+        #top-nav:hover > div {
+            gap: 1.5rem; /* This was gap-6 */
+        }
+        #top-nav:hover .nav-expandable-content {
+            max-width: 500px; /* Allows content to expand */
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        html.dark #top-nav, html.red-verse-theme #top-nav {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
         }
         
         /* --- Auth Buttons --- */
@@ -1651,10 +1679,10 @@
 <body class="font-body">
 
     <!-- STICKY NAV -->
-    <nav id="top-nav" class="fixed top-0 left-0 right-0 py-4 px-4 md:px-8 z-50">
-        <div class="max-w-6xl mx-auto flex justify-between items-center">
-            <a href="#about" class="font-headline text-2xl font-bold" style="color: var(--c-accent-1);">Timeless Whispers</a>
-            <div class="flex items-center gap-4 md:gap-6">
+    <nav id="top-nav" class="fixed top-0 left-1/2 -translate-x-1/2 py-3 px-6 z-50 mt-4 rounded-full shadow-lg" style="background-color: var(--c-bg);">
+        <div class="mx-auto flex justify-between items-center gap-6">
+            <a href="#about" class="font-headline text-2xl font-bold whitespace-nowrap" style="color: var(--c-accent-1);">Timeless Whispers</a>
+            <div class="flex items-center gap-4 md:gap-6 nav-expandable-content">
                 <a href="#journal" class="font-body text-sm hover:text-[var(--c-highlight)] transition-colors">Journal</a>
                 <a href="#gallery" class="font-body text-sm hover:text-[var(--c-highlight)] transition-colors">Gallery</a>
                 <a href="#connect" class="font-body text-sm hover:text-[var(--c-highlight)] transition-colors">Connect</a>
@@ -1663,7 +1691,7 @@
                     <span id="user-info" class="text-sm">
                         <span id="user-name" class="font-bold"></span>
                     </span>
-                    <button id="login-btn" class="font-bold py-2 px-4 rounded-full text-sm transition-all" style="background-color: var(--c-accent-1); color: var(--c-bg);">Sign In With Google</button>
+                    <button id="login-btn" class="font-bold py-2 px-4 rounded-full text-sm transition-all whitespace-nowrap" style="background-color: var(--c-accent-1); color: var(--c-bg);">Sign In With Google</button>
                     <button id="logout-btn" class="font-bold text-sm opacity-70 hover:opacity-100">Sign Out</button>
                 </div>
             </div>
