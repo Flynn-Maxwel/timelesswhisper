@@ -62,6 +62,9 @@
       // --- PAGE SCRIPT ---
       document.addEventListener('DOMContentLoaded', () => {
         
+        // This is the EXACT path your main site is reading from
+        const poemsColRef = collection(db, "artifacts", appId, "public", "data", "poems");
+        
         // --- DATA & CONSTANTS ---
         const emotions = ['All', 'Favorites', 'Love', 'Loss', 'Hope', 'Healing', 'Chaos', 'Silent Nights', 'Red Verse'];
         
@@ -90,6 +93,13 @@
         const loginBtn = document.getElementById('login-btn');
         const logoutBtn = document.getElementById('logout-btn');
         const userName = document.getElementById('user-name');
+        
+        // Admin Panel DOM Elements
+        const adminSection = document.getElementById('admin');
+        const adminLink = document.getElementById('admin-link');
+        const poemForm = document.getElementById('poem-form'); 
+        const statusMessage = document.getElementById('status-message');
+        const loadingIndicator = document.getElementById('loading-indicator');
 
         // --- SVG ICONS ---
         const SunIcon = `<svg class="w-6 h-6" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m4.93 19.07 1.41-1.41"></path><path d="m17.66 6.34 1.41-1.41"></path></svg>`;
@@ -389,6 +399,15 @@
                 // Start listening for this user's favorites
                 loadUserFavorites(user.uid);
                 
+                // *** ADMIN CHECK ***
+                if (user.email === 'timelesswhispersmax@gmail.com') {
+                    if (adminLink) adminLink.classList.remove('hidden');
+                    if (adminSection) adminSection.classList.remove('hidden');
+                } else {
+                    if (adminLink) adminLink.classList.add('hidden');
+                    if (adminSection) adminSection.classList.add('hidden');
+                }
+                
             } else {
                 // User is signed out
                 currentUserId = null;
@@ -398,6 +417,10 @@
                 // Clear local favorites and re-render
                 favoritePoemIds = [];
                 renderPoemsGrid();
+                
+                // Hide admin panel if signed out
+                if (adminLink) adminLink.classList.add('hidden');
+                if (adminSection) adminSection.classList.add('hidden');
             }
             // Update comment form visibility if modal is open
             checkAuthForComments(user);
@@ -736,6 +759,70 @@
             }
         }
 
+        // --- ADMIN PANEL FORM LOGIC ---
+        function showStatus(message, isError = false) {
+            if (statusMessage) { // Add check in case admin HTML is missing
+                statusMessage.textContent = message;
+                statusMessage.className = `text-sm ${isError ? 'text-red-600' : 'text-green-600'}`;
+                statusMessage.classList.remove('hidden');
+            }
+        }
+        
+        if (poemForm) { // Only attach listener if the form exists
+            poemForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                
+                const title = document.getElementById('poem-title').value;
+                const content = document.getElementById('poem-content').value;
+                const emotion = document.getElementById('poem-emotion').value;
+                const submitBtn = document.getElementById('submit-btn');
+
+                if (!title || !content || !emotion) {
+                    showStatus("Please fill out all fields.", true);
+                    return;
+                }
+
+                submitBtn.disabled = true;
+                loadingIndicator.classList.remove('hidden');
+                showStatus("Submitting...", false);
+
+                try {
+                    // 1. Get all existing poems to find the highest ID
+                    const q = query(poemsColRef);
+                    const snapshot = await getDocs(q);
+                    let highestId = 0;
+                    snapshot.forEach(doc => {
+                        const poemId = doc.data().id;
+                        if (poemId && poemId > highestId) {
+                            highestId = poemId;
+                        }
+                    });
+                    
+                    // 2. Create the new poem object with the next ID
+                    const newPoem = {
+                        title: title,
+                        content: content,
+                        emotion: emotion,
+                        id: highestId + 1 // Ensure new poems sort to the end
+                    };
+
+                    // 3. Add the new poem to the correct collection
+                    const docRef = await addDoc(poemsColRef, newPoem);
+                    
+                    console.log("Poem submitted with ID: ", docRef.id);
+                    showStatus("Poem submitted successfully!", false);
+                    poemForm.reset();
+
+                } catch (error) {
+                    console.error("Error adding poem: ", error);
+                    showStatus(`Error: ${error.message}`, true);
+                } finally {
+                    submitBtn.disabled = false;
+                    loadingIndicator.classList.add('hidden');
+                }
+            });
+        }
+        
         // --- EVENT LISTENERS ---
         modalCloseBtn.addEventListener('click', () => {
             modal.classList.remove('visible');
@@ -799,9 +886,6 @@
             { id: 9, title: 'A Soul Shattered by Love', emotion: 'Loss', content: `How can I mend a shattered soul?\nMy entire existence has crumbled.\nHow can I find solace in a new beginning,\nWhen the person I cherish is no longer present?\n\nMy thoughts are consumed by memories of you,\nOf all we’ve experienced, all we shared.\nI long for your touch and your comforting embrace,\nThe look in your eyes, the smile on your lips.\n\nMy dreams are filled with the tender kiss of yours.\nI wake up and weep for what I’ve lost.\nHow can I heal a broken heart,\nWhen my one true love and I are apart?\n\nMy heart is destined to love only you,\nIt refuses to let go, what should I do?\nOur moments together were rare and precious,\nBut I treasured them more than you could ever know.\n\nI love you, my angel, and always will.\nI felt love for you then, and I feel it still.` },
             { id: 10, title: 'Under the Moonlit Spell', emotion: 'Love', content: `Beneath the glimmering moonlight,\nUnder a blanket of stars,\nI find myself intertwined with you\nIn a faraway place that feels like ours.\n\nThe world is silent,\nAnd all I can sense\nIs the soft rhythm of our shared breaths.\nYou have me enchanted, my heart tightly ensnared,\nLost in your essence, where true love is declared.\n\nYour lips graze my neck,\nIgniting a flame,\nEach gentle touch\nStokes my desire’s name.\n\nAs my body awakens,\nIt yearns for your caress,\nLonging for your embrace,\nCraving you more and more, I confess.\n\nWith every movement,\nA smile dances on my face,\nShould I whisper sweet nothings\nOr let passion take its place?\n\nYou tug at your hair,\nLifting me high,\nFloating on clouds,\nAs if we could soar through the sky.\n\nAs I shiver and tremble,\nOur hearts begin to race,\nIn this moonlit sanctuary,\nI’m yours in this space.` },
         ];
-        
-        // This is the collection reference for your poems
-        const poemsColRef = collection(db, "artifacts", appId, "public", "data", "poems");
 
         async function seedDatabaseIfNeeded() {
             // Check if poems are already in the database
@@ -832,31 +916,36 @@
                 await seedDatabaseIfNeeded();
                 
                 // Now, load all poems from the database
-                const q = query(poemsColRef); // Removed orderBy to fix index error
-                const snapshot = await getDocs(q);
-                
-                allPoems = []; // Clear the local array
-                snapshot.forEach((doc) => {
-                    allPoems.push({
-                        ...doc.data(),
-                        docId: doc.id // Store the unique Firebase Document ID
+                // We use onSnapshot to listen for real-time updates
+                const q = query(poemsColRef); 
+                onSnapshot(q, (snapshot) => {
+                    allPoems = []; // Clear the local array
+                    snapshot.forEach((doc) => {
+                        allPoems.push({
+                            ...doc.data(),
+                            docId: doc.id // Store the unique Firebase Document ID
+                        });
                     });
-                });
 
-                // Sort in code to avoid Firebase index issues
-                allPoems.sort((a, b) => (a.id || 0) - (b.id || 0));
-                
-                // --- DEBUGGING CODE ---
-                // Log all loaded poems to see what data is coming from Firestore.
-                console.log("All poems loaded from Firestore:", allPoems); 
-                
-                // Log all "emotion" fields the code can see.
-                const emotionsInDB = allPoems.map(p => p.emotion);
-                console.log("Emotions found in database:", emotionsInDB);
-                // --- END DEBUGGING CODE ---
-                
-                // Once poems are loaded, render the grid
-                renderPoemsGrid();
+                    // Sort in code to avoid Firebase index issues
+                    allPoems.sort((a, b) => (a.id || 0) - (b.id || 0));
+                    
+                    // --- DEBUGGING CODE ---
+                    // Log all loaded poems to see what data is coming from Firestore.
+                    console.log("All poems loaded from Firestore:", allPoems); 
+                    
+                    // Log all "emotion" fields the code can see.
+                    const emotionsInDB = allPoems.map(p => p.emotion);
+                    console.log("Emotions found in database:", emotionsInDB);
+                    // --- END DEBUGGING CODE ---
+                    
+                    // Once poems are loaded, render the grid
+                    renderPoemsGrid();
+
+                }, (error) => {
+                     console.error("Error listening to poems from Firestore: ", error);
+                     poemsGrid.innerHTML = `<p class="col-span-full text-center text-red-500">Error: Could not load poems. ${error.message}</p>`;
+                });
                 
             } catch (error) {
                 console.error("Error loading poems from Firestore: ", error);
@@ -1028,10 +1117,35 @@
         /* --- Form Fields --- */
         .feedback-form-field {
             background-color: transparent;
-            border-color: var(--c-accent-2);
+            border: 2px solid var(--c-accent-2);
             color: var(--c-text);
             --tw-ring-color: var(--c-accent-1);
         }
+        .feedback-form-field:focus {
+            border-color: var(--c-accent-1);
+            box-shadow: 0 0 0 2px var(--c-accent-1);
+            outline: none;
+        }
+        
+        /* Style admin panel fields to match */
+        .admin-input {
+            background-color: var(--c-bg);
+            border: 2px solid var(--c-accent-2);
+            color: var(--c-text);
+            --tw-ring-color: var(--c-accent-1);
+        }
+        .admin-input:focus {
+            border-color: var(--c-accent-1);
+            box-shadow: 0 0 0 2px var(--c-accent-1);
+            outline: none;
+        }
+        /* Special override for admin panel when not in light mode */
+        html.dark .admin-input, html.red-verse-theme .admin-input {
+            background-color: #374151; /* gray-700 */
+            border-color: #4b5563; /* gray-600 */
+            color: #f3f4f6; /* gray-100 */
+        }
+
 
     </style>
 </head>
@@ -1045,6 +1159,7 @@
                 <a href="#journal" class="font-body text-sm hover:text-[var(--c-highlight)] transition-colors">Journal</a>
                 <a href="#gallery" class="font-body text-sm hover:text-[var(--c-highlight)] transition-colors">Gallery</a>
                 <a href="#connect" class="font-body text-sm hover:text-[var(--c-highlight)] transition-colors">Connect</a>
+                <a href="#admin" id="admin-link" class="font-body text-sm hover:text-[var(--c-highlight)] transition-colors hidden font-bold text-red-500">Admin</a>
                 <div id="nav-auth" class="flex items-center gap-2 md:gap-4 pl-2 md:pl-4 border-l" style="border-color: var(--c-accent-2);">
                     <span id="user-info" class="text-sm">
                         <span id="user-name" class="font-bold"></span>
@@ -1114,7 +1229,7 @@
                         <h3 class="font-headline text-2xl font-bold" style="color: var(--c-highlight)">Leave a Review</h3>
                         <p class="opacity-70 mt-1 mb-4 text-sm">Have feedback? Found a bug? Share your thoughts.</p>
                         <form id="review-form">
-                            <textarea id="review-text" name="review" placeholder="Your thoughts..." class="w-full p-3 h-32 rounded-lg border-2 focus:ring-2 outline-none transition-shadow feedback-form-field" required></textarea>
+                            <textarea id="review-text" name="review" placeholder="Your thoughts..." class="w-full p-3 h-32 rounded-lg focus:ring-2 outline-none transition-shadow feedback-form-field" required></textarea>
                             <button id="post-review-btn" type="submit" class="mt-2 font-bold py-2 px-5 rounded-full shadow-lg hover:opacity-90 transition-all text-sm disabled:opacity-60" style="background-color: var(--c-accent-1); color: var(--c-bg);">Send Feedback</button>
                             <p id="review-message" class="text-sm mt-2 hidden" style="color: var(--c-accent-1);"></p>
                         </form>
@@ -1125,8 +1240,8 @@
                         <h3 class="font-headline text-2xl font-bold" style="color: var(--c-highlight)">Share Your Whisper</h3>
                         <p class="opacity-70 mt-1 mb-4 text-sm">Submit your own poem for a chance to be featured.</p>
                         <form id="submission-form">
-                            <input id="submission-title" type="text" name="title" placeholder="Poem Title" class="w-full p-3 rounded-lg border-2 focus:ring-2 outline-none transition-shadow feedback-form-field" required>
-                            <textarea id="submission-content" name="content" placeholder="Your poem..." class="w-full p-3 h-48 mt-2 rounded-lg border-2 focus:ring-2 outline-none transition-shadow feedback-form-field" required></textarea>
+                            <input id="submission-title" type="text" name="title" placeholder="Poem Title" class="w-full p-3 rounded-lg focus:ring-2 outline-none transition-shadow feedback-form-field" required>
+                            <textarea id="submission-content" name="content" placeholder="Your poem..." class="w-full p-3 h-48 mt-2 rounded-lg focus:ring-2 outline-none transition-shadow feedback-form-field" required></textarea>
                             <button id="post-submission-btn" type="submit" class="mt-2 font-bold py-2 px-5 rounded-full shadow-lg hover:opacity-90 transition-all text-sm disabled:opacity-60" style="background-color: var(--c-accent-1); color: var(--c-bg);">Submit Poem</button>
                             <p id="submission-message" class="text-sm mt-2 hidden" style="color: var(--c-accent-1);"></p>
                         </form>
@@ -1135,6 +1250,58 @@
                 </div>
             </div>
         </section>
+        
+        <!-- ADMIN PANEL (Hidden by default) -->
+        <section id="admin" class="py-20 px-4 hidden bg-black/5 dark:bg-white/5">
+            <div class="max-w-4xl mx-auto p-4 md:p-8">
+                <div class="p-6 md:p-8 rounded-lg shadow-md" style="background-color: var(--c-bg); border: 1px solid var(--c-accent-2);">
+                    <h2 class="font-headline text-2xl mb-6 font-bold" style="color: var(--c-highlight);">Admin Panel - Add Poem</h2>
+                    
+                    <form id="poem-form" class="space-y-4">
+                        <!-- Title -->
+                        <div>
+                            <label for="poem-title" class="block text-sm font-medium" style="color: var(--c-text);">Title</label>
+                            <input type="text" id="poem-title" class="mt-1 block w-full rounded-lg p-3 focus:ring-2 outline-none transition-shadow admin-input" required>
+                        </div>
+
+                        <!-- Category -->
+                        <div>
+                            <label for="poem-emotion" class="block text-sm font-medium" style="color: var(--c-text);">Category (Emotion)</label>
+                            <select id="poem-emotion" class="mt-1 block w-full rounded-lg p-3 focus:ring-2 outline-none transition-shadow admin-input" required>
+                                <option value="">Select a category...</option>
+                                <option value="Love">Love</option>
+                                <option value="Loss">Loss</option>
+                                <option value="Hope">Hope</option>
+                                <option value="Healing">Healing</option>
+                                <option value="Chaos">Chaos</option>
+                                <option value="Silent Nights">Silent Nights</option>
+                                <option value="Red Verse">Red Verse</option>
+                            </select>
+                        </div>
+
+                        <!-- Content -->
+                        <div>
+                            <label for="poem-content" class="block text-sm font-medium" style="color: var(--c-text);">Content</label>
+                            <textarea id="poem-content" rows="15" class="mt-1 block w-full rounded-lg p-3 focus:ring-2 outline-none transition-shadow admin-input" required></textarea>
+                            <p class="text-xs opacity-60 mt-1">Line breaks will be preserved.</p>
+                        </div>
+
+                        <!-- Submit Button -->
+                        <div class="flex items-center gap-4">
+                            <button id="submit-btn" type="submit" class="font-bold py-2 px-5 rounded-full shadow-lg hover:opacity-90 transition-all text-sm disabled:opacity-60" style="background-color: var(--c-accent-1); color: var(--c-bg);">
+                                Submit Poem
+                            </button>
+                            <svg id="loading-indicator" class="hidden animate-spin h-5 w-5" style="color: var(--c-accent-1);" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <span id="status-message" class="text-sm hidden"></span>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </section>
+        
     </main>
 
     <!-- FOOTER -->
