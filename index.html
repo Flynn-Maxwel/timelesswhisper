@@ -64,7 +64,6 @@
         
         // --- DATA & CONSTANTS ---
         const emotions = ['All', 'Favorites', 'Love', 'Loss', 'Hope', 'Healing', 'Chaos', 'Silent Nights', 'Red Verse'];
-        const redVersePasscode = "Redkey";
         
         // --- STATE MANAGEMENT ---
         let currentTheme = 'light';
@@ -91,13 +90,6 @@
         const loginBtn = document.getElementById('login-btn');
         const logoutBtn = document.getElementById('logout-btn');
         const userName = document.getElementById('user-name');
-        
-        // Red Verse Password Modal
-        const passwordModal = document.getElementById('password-modal');
-        const passwordModalCloseBtn = document.getElementById('password-modal-close-btn');
-        const passwordSubmitBtn = document.getElementById('password-submit-btn');
-        const passwordInput = document.getElementById('password-input');
-        const passwordError = document.getElementById('password-error');
 
         // --- SVG ICONS ---
         const SunIcon = `<svg class="w-6 h-6" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m4.93 19.07 1.41-1.41"></path><path d="m17.66 6.34 1.41-1.41"></path></svg>`;
@@ -120,15 +112,14 @@
                     const filter = btn.dataset.filter;
                     
                     if (filter === 'Red Verse') {
-                        // Always ask for password for Red Verse
-                        showPasswordModal();
+                        setRedVerseTheme();
                     } else {
-                        // For all other filters, reset theme and filter
                         clearRedVerseTheme();
-                        activeFilter = filter;
-                        renderFilters();
-                        renderPoemsGrid();
                     }
+                    
+                    activeFilter = filter;
+                    renderFilters();
+                    renderPoemsGrid();
                 });
             });
         }
@@ -296,32 +287,6 @@
             if (docElement.classList.contains('red-verse-theme')) {
                 docElement.classList.remove('red-verse-theme');
                 heroSection.style.backgroundImage = `url('https://images.unsplash.com/photo-1455390582262-044cdead277a?q=80&w=1973&auto=format=fit=crop')`; // Restore hero image
-            }
-        }
-        
-        function showPasswordModal() {
-            passwordModal.classList.add('visible');
-            passwordInput.value = "";
-            passwordError.classList.add('hidden');
-            passwordInput.focus();
-        }
-        
-        function hidePasswordModal() {
-            passwordModal.classList.remove('visible');
-        }
-        
-        function checkRedVersePassword() {
-            const pass = passwordInput.value;
-            if (pass === redVersePasscode) {
-                // Correct password
-                hidePasswordModal();
-                setRedVerseTheme();
-                activeFilter = "Red Verse";
-                renderFilters();
-                renderPoemsGrid();
-            } else {
-                // Incorrect password
-                passwordError.classList.remove('hidden');
             }
         }
 
@@ -814,15 +779,6 @@
             }
         });
         
-        // Password Modal Listeners
-        passwordModalCloseBtn.addEventListener('click', hidePasswordModal);
-        passwordSubmitBtn.addEventListener('click', checkRedVersePassword);
-        passwordInput.addEventListener('keyup', (e) => {
-            if (e.key === 'Enter') {
-                checkRedVersePassword();
-            }
-        });
-        
         // Submission Form Listeners
         document.getElementById('review-form').addEventListener('submit', handleReviewSubmit);
         document.getElementById('submission-form').addEventListener('submit', handlePoemSubmit);
@@ -838,10 +794,10 @@
             { id: 4, title: 'When We First Met', emotion: 'Love', content: `The moment we first met,\nI knew we were meant to be.\nWe were destined to be together,\nAnd I knew you were the one.\n\nI had no idea who you were.\nAll I knew was your name.\nI had no idea what to do.\nI couldn’t decide who was at fault.\n\nI was aware of my attraction to you.\nYou seemed like a good person to me.\nThe butterflies were moving so quickly\nThat I had to stop and consider.\n\nNothing I did that day\nRevealed who I am to you.\nMy heart started to race\nEvery time you approached me.\n\nMy behavior wasn’t typical.\nMy responses weren’t sincere.\nI couldn’t control my heart,\nEven though I felt so awful.\n\nAnd you were the center of my attention\nWhen the group bid me farewell.\nI knew I was attempting to find out\nIf you shared my sentiments.\n\nWhen I saw your face,\nI liked you; however,\nIt might inave been the touch.\nMy heart was racing already.\n\nI was already too fond of you.\nThe moment we first met,\nI knew we were meant to be.\nI was aware that we were destined to be\nEnemies, lovers, and friends.` },
             { id: 5, title: 'A Love Divinely Crafted', emotion: 'Hope', content: `Though I’ve always known that love would find me eventually,\nI had no idea that it would be you.\nIn the same way that you captivate me when I gaze into your eyes,\nYou caught me off guard and took me by surprise.\n\nIt is a fact that all excellent and flawless gifts\nCome from above.\nI was given you as a gorgeously wrapped gift,\nFull of intelligence, humor, talent, beauty, and love.\n\n“Learning to see an imperfect person perfectly\nIs more important than searching for the ideal person.”\nWe all have imperfections,\nBut from my perspective, you are flawless.\n\nI still enjoy the small things you do,\nLike hearing you laugh and noticing how your nose wrinkles,\nEven when you’re upset, as well.\nI’m confident that we can accomplish anything\nAs long as we’re traveling this path together.\n\nI occasionally question whether what we have is too good to be true.\nI’m afraid of losing you and of having my heart broken,\nBut ultimately, I put my trust in the one who created and perfected what I believe,\nBecause He will grant us our requests.\n\nAs they say, “Where your treasure is, your heart will be also.”\nGod alone knows what tomorrow will bring, so I may not know.\nAll I know is that you are my one and only.\n\nGod made everything beautiful, precious, and new,\nJust as beautiful and precious as the day will be,\nWhen I look into your eyes and say,\n“I Love You.”` },
             { id: 6, title: 'The Essence of Love', emotion: 'Love', content: `To love is a journey through life, hand in hand,\nTo craft dreams that belong to just us two,\nTo labor together, side by side,\nAnd bask in the joy,\nAs one by one, our aspirations unfold.\n\nTo love is to uplift and inspire,\nWith warm smiles and heartfelt words of encouragement,\nTo carve out moments to connect,\nTo listen and nurture\nIn gentle, loving ways.\n\nTo love is to cherish someone unique,\nA steadfast presence through the passage of time,\nSharing both laughter and sorrow,\nAs a partner, a confidant, a beloved friend.\n\nTo love is to create cherished memories,\nOf moments that bring joy to our hearts,\nOf all the beautiful gifts\nThat life shared together offers. Love is the ultimate treasure.\n\nI’ve discovered the true essence\nOf sharing and caring,\nAnd new witnessing my dreams blossom;\nI’ve embraced the full meaning\nOf being in love\nBy simply being and loving you.` },
-            { id: 7, title: 'I Will Always Love You', emotion: 'Hope', content: `Even though you will occasionally annoy me and make me feel angry,\n“I will always love you.”\n\n“I will always love you, even though there are some hurtful things you might say\nThat will make me sad.”\n\nI will always love you,\nEven though I know that you will disappoint me with some foolish choices.\n\n“I will always love you, even though there are things you might do\nThat make me worry about you.”\n\n“I will always love you, even though there will be times\nWhen you will bring me to tears.”\n\n“You will make mistakes that I cannot forgive,\nBut I will always love you regardless.”\n\nI will always love you,\nDespite the lies you tell me to try to undermine my faith in you.\n\n“I want you to know that, despite the difficulties,\nDisagreements, and trials we will face in life,\n‘I will always love you,’ both now and in the future.”` },
-            { id: 8, title: 'In the Shadow of Your Presence', emotion: 'Silent Nights', content: `In a world where I’ve never asked for anything,\nI find myself in awe of how everything feels complete,\nFor you belong to me.\nYour presence alone fills my heart,\nAnd without you, this world loses its meaning.\nIt’s as if the universe conspired to bring us together,\nCrafting moments that shimmer with the essence of what could be.\nEach day unfolds like a page in a story\nThat I never knew I was longing to write,\nAnd you are the ink that brings it to life.\n\nIn my dreams, there exists a sacred space\nWhere it’s just you and me, untouched by anyone else.\nA realm where time stands still,\nAnd the outside world fades into a distant memory.\nOh, how I long for you to arrive!\nThe anticipation of your presence is a melody\nThat plays softly in my heart,\nA song that echoes through the corridors of my mind.\nAre our destinies woven together in this beautiful tapestry?\nEach thread a promise, each color a memory waiting to be made.\nIf our paths were to cross,\nI would fall hopelessly in love with you,\nSurrendering to the gravity of your essence.\nEven if fate keeps us apart, my heart will still yearn for you,\nFor you are mine—a truth that resonates deep within my soul.\n\nYou wonder what I see in you amidst the beauty that surrounds us.\nLittle do you know, you are the most captivating sight of all.\nPlease, look at yourself through my eyes.\nBeneath your hair lies a radiant smile,\nA beacon of warmth that lights up even the darkest corners of my heart.\nYour eyes dance with a light that draws me in,\nSparkling with a thousand unspoken stories,\nEach one more enchanting than the last.\n\nWhat can I say about your lips,\nThe ones that whisper sweet names to me?\nThey hold the. power to ignite a fire within me,\nA warmth that spreads through my veins like a gentle flame.\nAnd your heart—oh, how magnificent it is!\nIt beats with a rhythm that harmonizes with my own,\nA symphony of emotions that transcends the ordinary.\n\nPicture us, two hearts walking hand in hand,\nNavigating the world together,\nEach step a testament to our connection.\nWill the sky be clear, or will it rain?\nEven if the clouds gather, I would choose to be by your side,\nFor you are my everything.\nIn the storm, I would find solace in your embrace,\nAnd in the sunshine, I would bask in the glow of your laughter.\n\nTogether, we would create a universe of our own,\nA sanctuary.` },
+            { id: 7, title: 'I Will Always Love You', emotion: 'Hope', content: `Even though you will occasionally annoy me and make me feel angry,\n“I will always love you.”\n\n“I will always love you, even though there are some hurtful things you might say\nThat will make me sad.”\n\nI will always love you,\nEven though I know that you will disappoint me with some foolish choices.\n\n“I will always love you, even though there are things you might do\nThat make me worry about you.”\n\n“I will. always love you, even though there will be times\nWhen you will bring me to tears.”\n\n“You will make mistakes that I cannot forgive,\nBut I will always love you regardless.”\n\nI will always love you,\nDespite the lies you tell me to try to undermine my faith in you.\n\n“I want you to know that, despite the difficulties,\nDisagreements, and trials we will face in life,\n‘I will always love you,’ both now and in the future.”` },
+            { id: 8, title: 'In the Shadow of Your Presence', emotion: 'Silent Nights', content: `In a world where I’ve never asked for anything,\nI find myself in awe of how everything feels complete,\nFor you belong to me.\nYour presence alone fills my heart,\nAnd without you, this world loses its meaning.\nIt’s as if the universe conspired to bring us together,\nCrafting moments that shimmer with the essence of what could be.\nEach day unfolds like a page in a story\nThat I never knew I was longing to write,\nAnd you are the ink that brings it to life.\n\nIn my dreams, there exists a sacred space\nWhere it’s just you and me, untouched by anyone else.\nA realm where time stands still,\nAnd the outside world fades into a distant memory.\nOh, how I long for you to arrive!\nThe anticipation of your presence is a melody\nThat plays softly in my heart,\nA song that echoes through the corridors of my mind.\nAre our destinies woven together in this beautiful tapestry?\nEach thread a promise, each color a memory waiting to be made.\nIf our paths were to cross,\nI would fall hopelessly in love with you,\nSurrendering to the gravity of your essence.\nEven if fate keeps us apart, my heart will still yearn for you,\nFor you are mine—a truth that resonates deep within my soul.\n\nYou wonder what I see in you amidst the beauty that surrounds us.\nLittle do you know, you are the most captivating sight of all.\nPlease, look at yourself through my eyes.\nBeneath your hair lies a radiant smile,\nA beacon of warmth that lights up even the darkest corners of my heart.\nYour eyes dance with a light that draws me in,\nSparkling with a thousand unspoken stories,\nEach one more enchanting than the last.\n\nWhat can I say about your lips,\nThe ones that whisper sweet names to me?\nThey hold the. power to ignite a fire within me,\nA warmth that spreads through my veins like a gentle flame.\nAnd your heart—oh, how magnificent it is!\nIt beats with a rhythm that harmonizes with my own,\nA symphony of emotions that transcends the ordinary.\n\nPicture us, two hearts walking hand in hand,\nNavigating the world together,\nEach step a testament to our connection.\nWill the sky be clear, or will it rain?\nEven if the clouds gather, I would choose to be by your side,\nFor you are my everything.\nIn the storm, I would find solace in your embrace,\nAnd in the sunshine, I would bask in the glow of your laughter.\n\Togeth- er, we would create a universe of our own,\nA sanctuary.` },
             { id: 9, title: 'A Soul Shattered by Love', emotion: 'Loss', content: `How can I mend a shattered soul?\nMy entire existence has crumbled.\nHow can I find solace in a new beginning,\nWhen the person I cherish is no longer present?\n\nMy thoughts are consumed by memories of you,\nOf all we’ve experienced, all we shared.\nI long for your touch and your comforting embrace,\nThe look in your eyes, the smile on your lips.\n\nMy dreams are filled with the tender kiss of yours.\nI wake up and weep for what I’ve lost.\nHow can I heal a broken heart,\nWhen my one true love and I are apart?\n\nMy heart is destined to love only you,\nIt refuses to let go, what should I do?\nOur moments together were rare and precious,\nBut I treasured them more than you could ever know.\n\nI love you, my angel, and always will.\nI felt love for you then, and I feel it still.` },
-            { id: 10, title: 'Under the Moonlit Spell', emotion: 'Love', content: `Beneath the glimmering moonlight,\nUnder a blanket of stars,\nI find myself intertwined with you\nIn a faraway place that feels like ours.\n\nThe world is silent,\nAnd all I can sense\nIs the soft rhythm of our shared breaths.\nYou have me enchanted, my heart tightly ensnared,\nLost in your essence, where true love is declared.\n\nYour lips graze my neck,\nIgniting a flame,\nEach gentle touch\nStokes my desire’s name.\n\nAs my body awakens,\nIt yearns for your caress,\nLonging for your embrace,\nCraving you more and more, I confess.\n\nWith every movement,\nA smile dances on my face,\nShould I whisper sweet nothings\nOr let passion take its place?\n\nYou tug at my hair,\nLifting me high,\nFloating on clouds,\nAs if we could soar through the sky.\n\nAs I shiver and tremble,\nOur hearts begin to race,\nIn this moonlit sanctuary,\nI’m yours in this space.` },
+            { id: 10, title: 'Under the Moonlit Spell', emotion: 'Love', content: `Beneath the glimmering moonlight,\nUnder a blanket of stars,\nI find myself intertwined with you\nIn a faraway place that feels like ours.\n\nThe world is silent,\nAnd all I can sense\nIs the soft rhythm of our shared breaths.\nYou have me enchanted, my heart tightly ensnared,\nLost in your essence, where true love is declared.\n\nYour lips graze my neck,\nIgniting a flame,\nEach gentle touch\nStokes my desire’s name.\n\nAs my body awakens,\nIt yearns for your caress,\nLonging for your embrace,\nCraving you more and more, I confess.\n\nWith every movement,\nA smile dances on my face,\nShould I whisper sweet nothings\nOr let passion take its place?\n\nYou tug at your hair,\nLifting me high,\nFloating on clouds,\nAs if we could soar through the sky.\n\nAs I shiver and tremble,\nOur hearts begin to race,\nIn this moonlit sanctuary,\nI’m yours in this space.` },
         ];
         
         // This is the collection reference for your poems
@@ -890,7 +846,14 @@
                 // Sort in code to avoid Firebase index issues
                 allPoems.sort((a, b) => (a.id || 0) - (b.id || 0));
                 
-                console.log("Loaded poems from Firestore:", allPoems);
+                // --- DEBUGGING CODE ---
+                // Log all loaded poems to see what data is coming from Firestore.
+                console.log("All poems loaded from Firestore:", allPoems); 
+                
+                // Log all "emotion" fields the code can see.
+                const emotionsInDB = allPoems.map(p => p.emotion);
+                console.log("Emotions found in database:", emotionsInDB);
+                // --- END DEBUGGING CODE ---
                 
                 // Once poems are loaded, render the grid
                 renderPoemsGrid();
@@ -1019,20 +982,20 @@
         }
         
         /* --- Modal --- */
-        #quick-preview-modal, #password-modal {
+        #quick-preview-modal {
             opacity: 0;
             pointer-events: none;
             transition: opacity 0.3s ease;
         }
-        #quick-preview-modal.visible, #password-modal.visible {
+        #quick-preview-modal.visible {
             opacity: 1;
             pointer-events: auto;
         }
-        #quick-preview-modal .modal-content, #password-modal .modal-content {
+        #quick-preview-modal .modal-content {
             transition: transform 0.4s ease-out;
             transform: scale(0.95);
         }
-        #quick-preview-modal.visible .modal-content, #password-modal.visible .modal-content {
+        #quick-preview-modal.visible .modal-content {
             transform: scale(1);
         }
         
@@ -1191,21 +1154,6 @@
         <div class="modal-content w-full max-w-2xl max-h-[80vh] overflow-y-auto p-8 md:p-12 rounded-lg shadow-2xl relative z-[60]" style="background-color: var(--c-bg);">
             <button id="modal-close-btn" class="absolute top-4 right-4 text-2xl opacity-50 hover:opacity-100 transition-opacity" style="color: var(--c-text)">&times;</button>
             <div id="modal-poem-content"></div>
-        </div>
-    </div>
-    
-    <!-- RED VERSE PASSWORD MODAL -->
-    <div id="password-modal" class="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-[70] opacity-0 pointer-events-none transition-opacity duration-300">
-        <div class="modal-content w-full max-w-sm p-8 rounded-lg shadow-2xl relative z-[70]" style="background-color: var(--c-bg);">
-            <button id="password-modal-close-btn" class="absolute top-2 right-3 text-2xl opacity-50 hover:opacity-100 transition-opacity" style="color: var(--c-text)">&times;</button>
-            <h3 class="font-headline text-2xl font-bold mb-4" style="color: var(--c-highlight);">Enter the Verse</h3>
-            <p class="opacity-70 text-sm mb-4">This section is locked. To request access, please contact the admin at: <strong style="color: var(--c-accent-1);">timelesswhispersmax@gmail.com</strong></p>
-            <div>
-                <label for="password-input" class="font-bold text-sm opacity-80">Passcode</label>
-                <input type="password" id="password-input" class="w-full p-2 mt-1 rounded-lg border-2 focus:ring-2 outline-none transition-shadow" style="background-color: var(--c-bg); border-color: var(--c-accent-2); color: var(--c-text); --tw-ring-color: var(--c-accent-1);">
-                <p id="password-error" class="text-sm mt-1 hidden" style="color: var(--red-accent-1);">Incorrect passcode. Please try again.</p>
-            </div>
-            <button id="password-submit-btn" class="mt-4 w-full font-bold py-2 px-5 rounded-full shadow-lg hover:opacity-90 transition-all text-sm" style="background-color: var(--c-accent-1); color: var(--c-bg);">Unlock</button>
         </div>
     </div>
     
