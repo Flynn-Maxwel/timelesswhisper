@@ -88,14 +88,17 @@
         const poemsColRef = collection(db, "artifacts", appId, "public", "data", "poems");
         const commentsColRef = collection(db, "artifacts", appId, "public", "data", "comments");
         const usersColRef = collection(db, "artifacts", appId, "users");
+        // New reference for the categories document
+        const categoriesDocRef = doc(db, "artifacts", appId, "public", "data", "siteState", "categories");
 
         
         // --- DATA & CONSTANTS ---
-        const emotions = ['All', 'Favorites', 'Love', 'Loss', 'Hope', 'Healing', 'Chaos', 'Silent Nights', 'Red Verse'];
+        const defaultCategories = ['All', 'Favorites', 'Love', 'Loss', 'Hope', 'Healing', 'Chaos', 'Silent Nights', 'Red Verse'];
         
         // --- STATE MANAGEMENT ---
         let currentTheme = 'light';
         let activeFilter = 'All';
+        let categories = [...defaultCategories]; // This will be filled from Firestore
         let favoritePoemIds = []; // Stores Firebase doc IDs (strings)
         let currentOpenPoemId = null; // Stores Firebase doc ID (string)
         let allPoems = []; // This will be filled from Firestore
@@ -103,12 +106,14 @@
         let adminListeners = []; // To store admin onSnapshot listeners
         let poemFormEditId = null; // Stores ID of poem being edited
         let userFavoritesUnsubscribe = null; // To unsubscribe from user's favorites
+        let hasLoadedInitialData = false; // FIX: Flag to prevent re-loading data on auth flicker
+        let commentsUnsubscribe = null; // To store the onSnapshot listener
 
         // --- DOM ELEMENTS ---
         const docElement = document.documentElement;
         const body = document.body;
         const topNav = document.getElementById('top-nav');
-        const emotionFiltersContainer = document.getElementById('emotion-filters');
+        const categoryFiltersContainer = document.getElementById('category-filters'); // Renamed
         const poemsGrid = document.getElementById('poems-grid');
         const modal = document.getElementById('quick-preview-modal');
         const modalContent = document.getElementById('modal-poem-content');
@@ -133,6 +138,9 @@
         const addEditPoemTab = document.querySelector('[data-tab="add-edit-poem"]');
         const poemFormTitle = document.getElementById('poem-form-title');
         const submitBtn = document.getElementById('submit-btn');
+        const poemEmotionSelect = document.getElementById('poem-emotion');
+        const newCategoryInput = document.getElementById('new-category-input');
+        const addCategoryBtn = document.getElementById('add-category-btn');
         
         // Admin Data Lists
         const adminPoemList = document.getElementById('admin-poem-list');
@@ -162,15 +170,57 @@
         const ShareIcon = `<svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line></svg>`;
 
         // --- RENDER FUNCTIONS ---
+
+        // New function to seed categories if they don't exist
+        async function seedCategoriesIfNeeded() {
+            try {
+                const docSnap = await getDoc(categoriesDocRef);
+                if (!docSnap.exists()) {
+                    console.log("No categories doc found, seeding...");
+                    await setDoc(categoriesDocRef, { list: defaultCategories });
+                    categories = [...defaultCategories];
+                } else {
+                    // Load categories from Firestore
+                    categories = docSnap.data().list || [...defaultCategories];
+                }
+            } catch (error) {
+                console.error("Error seeding or checking categories:", error);
+                categories = [...defaultCategories]; // Fallback
+            }
+        }
+
+        // New function to load categories from Firestore
+        function loadCategories() {
+            onSnapshot(categoriesDocRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    categories = docSnap.data().list || [...defaultCategories];
+                } else {
+                    // Doc doesn't exist, seed it
+                    seedCategoriesIfNeeded(); // This will also update the 'categories' variable
+                }
+                
+                // Once categories are loaded/updated, re-render the UI
+                renderCategoryFilters();
+                renderAdminCategorySelect();
+            }, (error) => {
+                console.error("Error listening to categories:", error);
+                // Fallback to defaults if listener fails
+                categories = [...defaultCategories];
+                renderCategoryFilters();
+                renderAdminCategorySelect();
+            });
+        }
         
-        function renderFilters() {
-            emotionFiltersContainer.innerHTML = emotions.map(emotion => `
-                <button data-filter="${emotion}" class="filter-btn py-2 px-5 rounded-full text-sm transition-all duration-300 ${activeFilter === emotion ? 'active text-[var(--c-bg)]' : 'border'}" style="${activeFilter === emotion ? `background-color: var(--c-accent-1); border-color: var(--c-accent-1);` : `border-color: var(--c-accent-2); color: var(--c-text);`}">
-                    ${emotion}
+        // Renamed and updated to use dynamic 'categories'
+        function renderCategoryFilters() {
+            if (!categoryFiltersContainer) return;
+            categoryFiltersContainer.innerHTML = categories.map(category => `
+                <button data-filter="${category}" class="filter-btn py-2 px-5 rounded-full text-sm transition-all duration-300 ${activeFilter === category ? 'active text-[var(--c-bg)]' : 'border'}" style="${activeFilter === category ? `background-color: var(--c-accent-1); border-color: var(--c-accent-1);` : `border-color: var(--c-accent-2); color: var(--c-text);`}">
+                    ${category}
                 </button>
             `).join('');
             
-            emotionFiltersContainer.querySelectorAll('.filter-btn').forEach(btn => {
+            categoryFiltersContainer.querySelectorAll('.filter-btn').forEach(btn => {
                 btn.addEventListener('click', () => {
                     const filter = btn.dataset.filter;
                     
@@ -183,14 +233,35 @@
                         // Handle other filters normally
                         clearRedVerseTheme();
                         activeFilter = filter;
-                        renderFilters();
+                        renderCategoryFilters();
                         renderPoemsGrid();
                     }
                 });
             });
         }
 
+        // New function to populate the admin category dropdown
+        function renderAdminCategorySelect() {
+            if (!poemEmotionSelect) return;
+            
+            const currentValue = poemEmotionSelect.value;
+            poemEmotionSelect.innerHTML = `<option value="">Select a category...</option>`;
+            
+            categories.forEach(category => {
+                // "All" and "Favorites" are filters, not assignable categories
+                if (category === 'All' || category === 'Favorites') return;
+
+                poemEmotionSelect.innerHTML += `
+                    <option value="${category}" ${currentValue === category ? 'selected' : ''}>
+                        ${category}
+                    </option>
+                `;
+            });
+        }
+
+
         function renderPoemsGrid() {
+            if (!poemsGrid) return;
             let filteredPoems;
             
             if (activeFilter === 'All') {
@@ -205,6 +276,10 @@
             }
             
             if (filteredPoems.length === 0) {
+                if (!hasLoadedInitialData) {
+                    poemsGrid.innerHTML = `<p class="col-span-full text-center opacity-70">Loading poems...</p>`;
+                    return;
+                }
                 if (activeFilter === 'Favorites') {
                     poemsGrid.innerHTML = `<p class="col-span-full text-center opacity-70">You haven't favorited any poems yet.</p>`;
                 } else if (activeFilter === 'Red Verse') {
@@ -309,7 +384,7 @@
                 });
                 modal.querySelector('#shareButton').addEventListener('click', sharePoem);
                 modal.querySelector('#likeButton').addEventListener('click', likePost);
-                modal.querySelector('#post-comment-btn').addEventListener('click', postComment);
+                modal.querySelector('#post-comment-btn').addEventListener('click', () => postComment()); // Updated
                 modal.querySelector('#comment-login-btn').addEventListener('click', googleLogin);
 
                 
@@ -323,7 +398,9 @@
         }
 
         function renderThemeToggle() {
-            themeToggleButton.innerHTML = currentTheme === 'light' ? MoonIcon : SunIcon;
+            if (themeToggleButton) {
+                themeToggleButton.innerHTML = currentTheme === 'light' ? MoonIcon : SunIcon;
+            }
         }
 
         // --- CORE LOGIC ---
@@ -336,7 +413,7 @@
                 docElement.classList.toggle('light');
                 currentTheme = docElement.classList.contains('dark') ? 'dark' : 'light';
                 
-                renderFilters();
+                renderCategoryFilters();
                 renderPoemsGrid();
                 renderThemeToggle();
                 
@@ -346,13 +423,17 @@
         
         function setRedVerseTheme() {
             docElement.classList.add('red-verse-theme');
-            heroSection.style.backgroundImage = 'none'; // Remove hero image
+            if (heroSection) {
+                heroSection.style.backgroundImage = 'none'; // Remove hero image
+            }
         }
         
         function clearRedVerseTheme() {
             if (docElement.classList.contains('red-verse-theme')) {
                 docElement.classList.remove('red-verse-theme');
-                heroSection.style.backgroundImage = `url('https://images.unsplash.com/photo-1455390582262-044cdead277a?q=80&w=1973&auto=format=fit=crop')`; // Restore hero image
+                if (heroSection) {
+                    heroSection.style.backgroundImage = `url('https://images.unsplash.com/photo-1455390582262-044cdead277a?q=80&w=1973&auto=format=fit=crop')`; // Restore hero image
+                }
             }
         }
 
@@ -439,7 +520,8 @@
 
         window.googleLogin = function(){
             // The 'auth/unauthorized-domain' error is a FIREBASE SETTINGS issue.
-            // See note at top of this file for the fix.
+            // You must add the domain from the error log (e.g., scf.usercontent.goog)
+            // to the Firebase -> Authentication -> Settings -> Authorized domains list.
             signInWithPopup(auth, provider)
             .then(result => {
                 console.log("Logged in as " + result.user.displayName);
@@ -469,17 +551,26 @@
                     // User is signed in
                     currentUserId = user.uid;
                     
+                    // --- Load initial data ONCE after auth is ready ---
+                    if (!hasLoadedInitialData) {
+                        console.log("Auth ready, loading initial data...");
+                        loadCategories(); // This will load categories, then render filters
+                        loadPoemsFromFirestore();
+                        hasLoadedInitialData = true;
+                    }
+                    // --- End initial data load ---
+                    
                     if (user.isAnonymous) {
                         console.log("User signed in anonymously:", user.uid);
-                        userName.textContent = 'Hi, Guest';
-                        navAuth.classList.add('signed-in');
+                        if (userName) userName.textContent = 'Hi, Guest';
+                        if (navAuth) navAuth.classList.add('signed-in');
                     } else {
                         console.log("User signed in:", user.displayName);
                         currentUserId = user.uid;
                         // FIX: Check if user.displayName is not null before splitting
                         const displayName = user.displayName ? user.displayName.split(' ')[0] : 'User';
-                        userName.textContent = `Hi, ${displayName}`;
-                        navAuth.classList.add('signed-in');
+                        if (userName) userName.textContent = `Hi, ${displayName}`;
+                        if (navAuth) navAuth.classList.add('signed-in');
                         
                         // Load or create this user's private data doc
                         saveUser(user);
@@ -504,8 +595,9 @@
                     // User is signed out
                     console.log("User signed out.");
                     currentUserId = null;
-                    userName.textContent = '';
-                    navAuth.classList.remove('signed-in');
+                    if (userName) userName.textContent = '';
+                    if (navAuth) navAuth.classList.remove('signed-in');
+                    hasLoadedInitialData = false; // Reset flag
                     
                     // Clear local favorites and re-render
                     favoritePoemIds = [];
@@ -541,6 +633,7 @@
                 console.error("Error during initial sign-in:", error);
                 // Fallback to anonymous just in case
                 if (auth.currentUser == null) {
+                    console.log("Retrying with anonymous sign-in...");
                     await signInAnonymously(auth);
                 }
             }
@@ -715,57 +808,91 @@
             }
         }
 
-        window.postComment = async function(){
+        // Updated to handle replies
+        window.postComment = async function(replyToId = null) {
             const user = auth.currentUser;
-            if(!user || user.isAnonymous) {
+            if (!user || user.isAnonymous) {
                 console.error("Login first!");
                 googleLogin(); // Prompt for login
                 return;
             }
-            if(!currentOpenPoemId) {
+            if (!currentOpenPoemId) {
                 console.error("No poem ID selected.");
                 return;
             }
 
-            let textEl = document.getElementById("comment");
-            let text = textEl.value;
+            let text;
+            let textEl;
+            let postBtn;
+
+            if (replyToId) {
+                // We are posting a reply
+                textEl = document.getElementById(`reply-text-${replyToId}`);
+                postBtn = document.getElementById(`reply-btn-${replyToId}`);
+            } else {
+                // We are posting a parent comment
+                textEl = document.getElementById("comment");
+                postBtn = document.getElementById('post-comment-btn');
+            }
+
+            if (!textEl) {
+                console.error("Could not find text element");
+                return;
+            }
+            text = textEl.value;
             if (!text.trim()) return; // Don't post empty comments
-            
-            const postBtn = document.getElementById('post-comment-btn');
-            postBtn.disabled = true;
-            postBtn.textContent = "Posting...";
+
+            if (postBtn) {
+                postBtn.disabled = true;
+                postBtn.textContent = "Posting...";
+            }
 
             try {
                 // Save to a public subcollection
-                await addDoc(commentsColRef, {
+                const commentData = {
                     poemID: currentOpenPoemId,
                     userID: user.uid,
                     user: user.displayName, // user's display name
                     text: text,
                     time: serverTimestamp()
-                });
+                };
+
+                if (replyToId) {
+                    commentData.replyTo = replyToId;
+                }
+
+                await addDoc(commentsColRef, commentData);
                 
                 console.log("Comment posted!");
                 textEl.value = ""; // Clear textarea
-                
-                // Show success message
-                const successMsg = document.getElementById('comment-success-msg');
-                if (successMsg) {
-                    successMsg.style.display = 'inline';
-                    setTimeout(() => { successMsg.style.display = 'none'; }, 3000);
+
+                // If it was a reply, remove the form
+                if (replyToId) {
+                    const formContainer = document.getElementById(`reply-form-${replyToId}`);
+                    if (formContainer) {
+                        formContainer.remove();
+                    }
+                } else {
+                    // Show success message for parent comment
+                    const successMsg = document.getElementById('comment-success-msg');
+                    if (successMsg) {
+                        successMsg.style.display = 'inline';
+                        setTimeout(() => { successMsg.style.display = 'none'; }, 3000);
+                    }
                 }
                 
                 // loadComments() will be triggered by onSnapshot
             } catch (e) {
                 console.error("Error posting comment: ", e);
             } finally {
-                postBtn.disabled = false;
-                postBtn.textContent = "Post";
+                if (postBtn) {
+                    postBtn.disabled = false;
+                    postBtn.textContent = "Post";
+                }
             }
         };
-        
-        let commentsUnsubscribe = null; // To store the onSnapshot listener
 
+        // Updated to handle replies
         window.loadComments = async function(poemDocId){
             const list = document.getElementById('list');
             if (!list) return; // Exit if modal isn't open
@@ -779,20 +906,36 @@
             const q = query(
                 commentsColRef, 
                 where("poemID", "==", poemDocId)
-                // Note: We are sorting in code to avoid the composite index requirement
-                // orderBy("time", "desc") // This would require a composite index
+                // We will sort in code
             );
             
             commentsUnsubscribe = onSnapshot(q, (querySnapshot) => {
-                let comments = [];
+                let allComments = [];
                 querySnapshot.forEach(doc => {
-                    comments.push(doc.data());
+                    allComments.push({ ...doc.data(), docId: doc.id });
                 });
 
-                // Sort by time, newest first (if time is null, put at end)
-                comments.sort((a, b) => (b.time?.seconds || 0) - (a.time?.seconds || 0));
+                // Sort all by time, oldest first
+                allComments.sort((a, b) => (a.time?.seconds || 0) - (b.time?.seconds || 0));
                 
-                renderComments(comments);
+                // Separate parents and replies
+                const parentComments = [];
+                const repliesMap = new Map(); // Map<parentId, reply[]>
+
+                for (const comment of allComments) {
+                    if (comment.replyTo) {
+                        // This is a reply
+                        if (!repliesMap.has(comment.replyTo)) {
+                            repliesMap.set(comment.replyTo, []);
+                        }
+                        repliesMap.get(comment.replyTo).push(comment);
+                    } else {
+                        // This is a parent comment
+                        parentComments.push(comment);
+                    }
+                }
+                
+                renderComments(parentComments, repliesMap);
                 
             }, (error) => {
                 console.error("Error listening to comments: ", error);
@@ -800,26 +943,98 @@
             });
         }
 
-        function renderComments(comments) {
+        // Renders one comment (parent or reply)
+        function renderSingleComment(comment) {
+            const time = comment.time ? new Date(comment.time.seconds * 1000).toLocaleString() : 'Just now';
+            // Only parent comments get a reply button
+            const replyButton = !comment.replyTo
+                ? `<button class="reply-btn text-sm font-bold opacity-70 hover:opacity-100" data-comment-id="${comment.docId}" style="color: var(--c-accent-1);">Reply</button>`
+                : '';
+
+            return `
+                <div class="comment-container">
+                    <div class="border-l-2 pl-3" style="border-color: var(--c-accent-2);">
+                        <p class="leading-relaxed">${comment.text}</p>
+                        <p class="text-sm opacity-60 mt-1">
+                            <strong>${comment.user || 'Anonymous'}</strong> – <span class="text-xs">${time}</span>
+                        </p>
+                        ${replyButton}
+                    </div>
+                    <!-- Container for reply form -->
+                    <div id="reply-form-${comment.docId}" class="pl-5 mt-2"></div>
+                    <!-- Container for replies -->
+                    <div id="replies-${comment.docId}" class="pl-5 mt-3 space-y-3 replies-container">
+                        <!-- Replies will be injected here -->
+                    </div>
+                </div>
+            `;
+        }
+
+        // Updated to render threads
+        function renderComments(parentComments, repliesMap) {
             const list = document.getElementById('list');
             if (!list) return;
 
-            if (comments.length === 0) {
+            if (parentComments.length === 0) {
                 list.innerHTML = "<p class='opacity-50'>Be the first to leave a reflection.</p>";
                 return;
             }
             
-            list.innerHTML = comments.map(c => {
-                const time = c.time ? new Date(c.time.seconds * 1000).toLocaleString() : 'Just now';
-                return `
-                    <div class="border-l-2 pl-3" style="border-color: var(--c-accent-2);">
-                        <p class="leading-relaxed">${c.text}</p>
-                        <p class="text-sm opacity-60 mt-1">
-                            <strong>${c.user || 'Anonymous'}</strong> – <span class="text-xs">${time}</span>
-                        </p>
+            // Render parent comments
+            list.innerHTML = parentComments.map(renderSingleComment).join('');
+
+            // Now, render replies
+            for (const [parentId, replies] of repliesMap.entries()) {
+                const repliesContainer = document.getElementById(`replies-${parentId}`);
+                if (repliesContainer) {
+                    repliesContainer.innerHTML = replies.map(renderSingleComment).join('');
+                }
+            }
+
+            // After HTML is in, attach listeners
+            attachCommentButtonListeners();
+        }
+
+        function attachCommentButtonListeners() {
+            document.querySelectorAll('.reply-btn').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const commentId = e.target.dataset.commentId;
+                    showReplyForm(commentId);
+                });
+            });
+        }
+
+        function showReplyForm(commentId) {
+            // Remove any other open reply forms
+            const existingForms = document.querySelectorAll('.reply-form');
+            existingForms.forEach(form => form.remove());
+
+            const formContainer = document.getElementById(`reply-form-${commentId}`);
+            if (formContainer) {
+                formContainer.innerHTML = `
+                    <div class="reply-form">
+                        <textarea id="reply-text-${commentId}" placeholder="Write a reply..." class="w-full p-2 h-20 rounded-lg border-2 focus:ring-2 outline-none transition-shadow text-sm" style="background-color: var(--c-bg); border-color: var(--c-accent-2); color: var(--c-text); --tw-ring-color: var(--c-accent-1);"></textarea>
+                        <div class="mt-1">
+                            <button id="reply-btn-${commentId}" class="font-bold py-1 px-3 rounded-full shadow hover:opacity-90 transition-all text-xs" style="background-color: var(--c-accent-1); color: var(--c-bg);">Post</button>
+                            <button class="cancel-reply-btn font-bold py-1 px-3 rounded-full text-xs opacity-70 hover:opacity-100" data-container="reply-form-${commentId}">Cancel</button>
+                        </div>
                     </div>
                 `;
-            }).join('');
+
+                // Add listener for the new "Post" button
+                document.getElementById(`reply-btn-${commentId}`).addEventListener('click', () => {
+                    postComment(commentId);
+                });
+
+                // Add listener for the new "Cancel" button
+                formContainer.querySelector('.cancel-reply-btn').addEventListener('click', (e) => {
+                    const containerId = e.target.dataset.container;
+                    const container = document.getElementById(containerId);
+                    if (container) {
+                        container.innerHTML = '';
+                    }
+                });
+            }
         }
         
         // --- SUBMISSION FORM FUNCTIONS ---
@@ -1227,44 +1442,69 @@
         }
         
         // --- 10. Admin Tab Switching Logic ---
-        adminTabs.forEach(tab => {
-            tab.addEventListener('click', () => {
-                const target = tab.dataset.tab;
-                
-                // Update tab styles
-                adminTabs.forEach(t => t.classList.remove('admin-tab-active'));
-                tab.classList.add('admin-tab-active');
-                
-                // Show/hide content
-                adminTabContents.forEach(content => {
-                    if (content.id === `content-${target}`) {
-                        content.classList.remove('hidden');
-                    } else {
-                        content.classList.add('hidden');
+        if (adminTabs) {
+            adminTabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    const target = tab.dataset.tab;
+                    
+                    // Update tab styles
+                    adminTabs.forEach(t => t.classList.remove('admin-tab-active'));
+                    tab.classList.add('admin-tab-active');
+                    
+                    // Show/hide content
+                    adminTabContents.forEach(content => {
+                        if (content.id === `content-${target}`) {
+                            content.classList.remove('hidden');
+                        } else {
+                            content.classList.add('hidden');
+                        }
+                    });
+                    
+                    // If switching to Add/Edit tab, reset the form
+                    if (target === 'add-edit-poem') {
+                        resetPoemForm();
                     }
                 });
-                
-                // If switching to Add/Edit tab, reset the form
-                if (target === 'add-edit-poem') {
-                    resetPoemForm();
+            });
+        }
+        
+        // --- 11. Admin Add Category Logic ---
+        if (addCategoryBtn) {
+            addCategoryBtn.addEventListener('click', async () => {
+                const newCategoryName = newCategoryInput.value.trim();
+                if (!newCategoryName) {
+                    showStatus("Please enter a category name.", true);
+                    return;
+                }
+                // Check if category already exists (case-insensitive)
+                if (categories.some(cat => cat.toLowerCase() === newCategoryName.toLowerCase())) {
+                    showStatus("This category already exists.", true);
+                    return;
+                }
+
+                try {
+                    addCategoryBtn.disabled = true;
+                    showStatus("Adding category...", false);
+                    // Update the document in Firestore
+                    await updateDoc(categoriesDocRef, {
+                        list: arrayUnion(newCategoryName)
+                    });
+                    // The onSnapshot listener will automatically update the UI
+                    newCategoryInput.value = '';
+                    showStatus("Category added!", false);
+                } catch (error) {
+                    console.error("Error adding category:", error);
+                    showStatus("Error adding category.", true);
+                } finally {
+                    addCategoryBtn.disabled = false;
                 }
             });
-        });
+        }
 
         
         // --- EVENT LISTENERS ---
-        modalCloseBtn.addEventListener('click', () => {
-            modal.classList.remove('visible');
-            renderPoemsGrid();
-            currentOpenPoemId = null;
-            if (commentsUnsubscribe) {
-                commentsUnsubscribe(); // Detach listener when modal closes
-                commentsUnsubscribe = null;
-            }
-        });
-        
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
+        if (modalCloseBtn) {
+            modalCloseBtn.addEventListener('click', () => {
                 modal.classList.remove('visible');
                 renderPoemsGrid();
                 currentOpenPoemId = null;
@@ -1272,38 +1512,57 @@
                     commentsUnsubscribe(); // Detach listener when modal closes
                     commentsUnsubscribe = null;
                 }
-            }
-        });
+            });
+        }
+        
+        if (modal) {
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.classList.remove('visible');
+                    renderPoemsGrid();
+                    currentOpenPoemId = null;
+                    if (commentsUnsubscribe) {
+                        commentsUnsubscribe(); // Detach listener when modal closes
+                        commentsUnsubscribe = null;
+                    }
+                }
+            });
+        }
 
         // --- Red Verse Modal Listeners ---
-        redVerseCloseBtn.addEventListener('click', () => {
-            redVerseModal.classList.remove('visible');
-        });
-
-        redVerseCancelBtn.addEventListener('click', () => {
-            redVerseModal.classList.remove('visible');
-        });
-
-        redVerseModal.addEventListener('click', (e) => {
-            if (e.target === redVerseModal) {
+        if (redVerseCloseBtn) {
+            redVerseCloseBtn.addEventListener('click', () => {
                 redVerseModal.classList.remove('visible');
-            }
-        });
-
-        redVerseSubmitBtn.addEventListener('click', () => {
-            const password = redVersePasswordInput.value;
-            if (password === 'redkey') {
-                // Correct password
+            });
+        }
+        if (redVerseCancelBtn) {
+            redVerseCancelBtn.addEventListener('click', () => {
                 redVerseModal.classList.remove('visible');
-                setRedVerseTheme();
-                activeFilter = 'Red Verse';
-                renderFilters();
-                renderPoemsGrid();
-            } else {
-                // Incorrect password
-                redVerseError.classList.remove('hidden');
-            }
-        });
+            });
+        }
+        if (redVerseModal) {
+            redVerseModal.addEventListener('click', (e) => {
+                if (e.target === redVerseModal) {
+                    redVerseModal.classList.remove('visible');
+                }
+            });
+        }
+        if (redVerseSubmitBtn) {
+            redVerseSubmitBtn.addEventListener('click', () => {
+                const password = redVersePasswordInput.value;
+                if (password === 'redkey') {
+                    // Correct password
+                    redVerseModal.classList.remove('visible');
+                    setRedVerseTheme();
+                    activeFilter = 'Red Verse';
+                    renderCategoryFilters();
+                    renderPoemsGrid();
+                } else {
+                    // Incorrect password
+                    redVerseError.classList.remove('hidden');
+                }
+            });
+        }
         
         document.querySelectorAll('a[href^="#"]').forEach(anchor => {
             anchor.addEventListener('click', function (e) {
@@ -1316,13 +1575,34 @@
                 }
             }); 
         });
-        
-        // Removed scroll listener for nav bar
-        
-        // Submission Form Listeners
-        document.getElementById('review-form').addEventListener('submit', handleReviewSubmit);
-        document.getElementById('submission-form').addEventListener('submit', handlePoemSubmit);
 
+        // FIX: Moved all data-dependent initialization into setupAuthListener
+        // Only non-data, non-auth listeners should be here.
+        async function init() {
+            // Attach login/logout to buttons in nav
+            if (loginBtn) loginBtn.addEventListener('click', googleLogin);
+            if (logoutBtn) logoutBtn.addEventListener('click', googleLogout);
+            
+            // Attach other non-data-dependent listeners
+            if (themeToggleButton) {
+                renderThemeToggle();
+                themeToggleButton.addEventListener('click', toggleTheme);
+            }
+            if (document.getElementById('review-form')) {
+                document.getElementById('review-form').addEventListener('submit', handleReviewSubmit);
+            }
+            if (document.getElementById('submission-form')) {
+                document.getElementById('submission-form').addEventListener('submit', handlePoemSubmit);
+            }
+
+            // Set up the authentication listener
+            // This will also handle the initial sign-in and trigger data loading
+            await setupAuthListener();
+
+            // Note: Data loading (loadCategories, loadPoemsFromFirestore)
+            // is now called INSIDE setupAuthListener once auth is ready.
+        }
+        
         // --- INITIALIZATION ---
         
         // This is the array of poems that will be auto-uploaded
@@ -1397,30 +1677,17 @@
 
                 }, (error) => {
                     console.error("Error listening to poems from Firestore: ", error);
-                    poemsGrid.innerHTML = `<p class="col-span-full text-center text-red-500">Error: Could not load poems. ${error.message}</p>`;
+                    if (poemsGrid) {
+                        poemsGrid.innerHTML = `<p class="col-span-full text-center text-red-500">Error: Could not load poems. ${error.message}</p>`;
+                    }
                 });
                 
             } catch (error) {
                 console.error("Error loading poems from Firestore: ", error);
-                poemsGrid.innerHTML = `<p class="col-span-full text-center text-red-500">Error: Could not load poems. ${error.message}</p>`;
+                if (poemsGrid) {
+                    poemsGrid.innerHTML = `<p class="col-span-full text-center text-red-500">Error: Could not load poems. ${error.message}</p>`;
+                }
             }
-        }
-
-        async function init() {
-            // Attach login/logout to buttons in nav
-            loginBtn.addEventListener('click', googleLogin);
-            logoutBtn.addEventListener('click', googleLogout);
-            
-            // Set up the authentication listener
-            // This will also handle the initial sign-in
-            await setupAuthListener();
-
-            // Load poems from Firestore
-            loadPoemsFromFirestore();
-
-            renderFilters();
-            renderThemeToggle();
-            themeToggleButton.addEventListener('click', toggleTheme);
         }
 
         init();
@@ -1436,6 +1703,8 @@
             --light-accent-1: #A67C52;
             --light-accent-2: #D4BFAA;
             --light-highlight: #6B4226;
+            --light-bg-transparent: rgba(255, 249, 242, 0.65);
+            --light-border-transparent: rgba(255, 255, 255, 0.2);
 
             /* 🌙 Dark Mode: “Sepia Eclipse” */
             --dark-bg: #1C1A18;
@@ -1443,6 +1712,8 @@
             --dark-accent-1: #A67C52;
             --dark-accent-2: #533C2C;
             --dark-highlight: #E2B27E;
+            --dark-bg-transparent: rgba(28, 26, 24, 0.65);
+            --dark-border-transparent: rgba(255, 255, 255, 0.1);
             
             /* ❤️ Red Verse Mode: “Romantic Crimson” */
             --red-bg: #1F1F1F; /* Dark Charcoal */
@@ -1450,12 +1721,16 @@
             --red-accent-1: #B22222; /* Firebrick Red */
             --red-accent-2: #5A1C1C;
             --red-highlight: #F0A0A0; /* Lighter red for highlights */
+            --red-bg-transparent: rgba(31, 31, 31, 0.65);
+            --red-border-transparent: rgba(255, 255, 255, 0.1);
             
             --c-bg: var(--light-bg);
             --c-text: var(--light-text);
             --c-accent-1: var(--light-accent-1);
             --c-accent-2: var(--light-accent-2);
             --c-highlight: var(--light-highlight);
+            --c-bg-transparent: var(--light-bg-transparent);
+            --c-border-transparent: var(--light-border-transparent);
         }
 
         html.dark {
@@ -1464,6 +1739,8 @@
              --c-accent-1: var(--dark-accent-1);
              --c-accent-2: var(--dark-accent-2); 
              --c-highlight: var(--dark-highlight);
+             --c-bg-transparent: var(--dark-bg-transparent);
+             --c-border-transparent: var(--dark-border-transparent);
         }
         
         html.red-verse-theme {
@@ -1472,6 +1749,8 @@
              --c-accent-1: var(--red-accent-1);
              --c-accent-2: var(--red-accent-2); 
              --c-highlight: var(--red-highlight);
+             --c-bg-transparent: var(--red-bg-transparent);
+             --c-border-transparent: var(--red-border-transparent);
         }
         
         /* Red Verse Hero Override */
@@ -1569,6 +1848,11 @@
         
         /* --- Floating Nav --- */
         #top-nav {
+            /* Liquid Glass morphism */
+            background-color: var(--c-bg-transparent);
+            backdrop-filter: blur(20px); /* Increased blur */
+            border: 1px solid var(--c-border-transparent); /* Softer edge */
+
             /* New properties for Dynamic Island effect */
             max-width: 270px; /* Adjusted for title + padding */
             overflow: hidden;
@@ -1578,8 +1862,8 @@
                         background-color 0.5s, 
                         color 0.5s, 
                         box-shadow 0.5s;
-            /* Existing properties */
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            /* Softer, more "liquid" shadow */
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1); 
         }
         #top-nav > div { /* The inner flex container */
             gap: 0;
@@ -1599,19 +1883,33 @@
         }
 
         #top-nav:hover {
-            max-width: 700px; /* A large value to fit everything */
+            max-width: 800px; /* Increased to ensure all content fits */
         }
         #top-nav:hover > div {
             gap: 1.5rem; /* This was gap-6 */
         }
         #top-nav:hover .nav-expandable-content {
-            max-width: 500px; /* Allows content to expand */
+            max-width: 600px; /* Increased to ensure all content fits */
             opacity: 1;
             transform: translateX(0);
         }
 
         html.dark #top-nav, html.red-verse-theme #top-nav {
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+
+        /* --- Google Sign In Button --- */
+        .google-signin-btn {
+            background-color: #FFFFFF;
+            transition: all 0.2s ease-in-out;
+            box-shadow: 0 1px 2px 0 rgba(0,0,0,0.1);
+            display: flex; /* To center the SVG */
+            align-items: center;
+            justify-content: center;
+        }
+        .google-signin-btn:hover {
+            background-color: #f8f8f8;
+            box-shadow: 0 2px 4px 0 rgba(0,0,0,0.15);
         }
         
         /* --- Auth Buttons --- */
@@ -1673,13 +1971,17 @@
             background-color: rgba(128, 128, 128, 0.05);
         }
 
+        /* --- Comment Replies --- */
+        .replies-container {
+            border-left: 2px solid var(--c-accent-2);
+        }
 
     </style>
 </head>
 <body class="font-body">
 
     <!-- STICKY NAV -->
-    <nav id="top-nav" class="fixed top-0 left-1/2 -translate-x-1/2 py-3 px-6 z-50 mt-4 rounded-full shadow-lg" style="background-color: var(--c-bg);">
+    <nav id="top-nav" class="fixed top-0 left-1/2 -translate-x-1/2 py-3 px-6 z-50 mt-4 rounded-full shadow-lg">
         <div class="mx-auto flex justify-between items-center gap-6">
             <a href="#about" class="font-headline text-2xl font-bold whitespace-nowrap" style="color: var(--c-accent-1);">Timeless Whispers</a>
             <div class="flex items-center gap-4 md:gap-6 nav-expandable-content">
@@ -1691,7 +1993,15 @@
                     <span id="user-info" class="text-sm">
                         <span id="user-name" class="font-bold"></span>
                     </span>
-                    <button id="login-btn" class="font-bold py-2 px-4 rounded-full text-sm transition-all whitespace-nowrap" style="background-color: var(--c-accent-1); color: var(--c-bg);">Sign In With Google</button>
+                    <button id="login-btn" class="google-signin-btn p-2.5 rounded-full text-sm transition-all whitespace-nowrap">
+                        <svg version="1.1" xmlns="http://www.w3.org/2000/svg" width="18px" height="18px" viewBox="0 0 48 48">
+                          <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
+                          <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
+                          <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
+                          <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.2-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
+                          <path fill="none" d="M0 0h48v48H0z"></path>
+                        </svg>
+                    </button>
                     <button id="logout-btn" class="font-bold text-sm opacity-70 hover:opacity-100">Sign Out</button>
                 </div>
             </div>
@@ -1734,7 +2044,7 @@
         <section id="gallery" class="min-h-screen py-20 px-4 md:px-8 flex items-center">
             <div class="max-w-6xl w-full mx-auto">
                 <h2 class="font-headline text-4xl text-center font-bold" style="color: var(--c-highlight)">Read what your heart needs.</h2>
-                <div id="emotion-filters" class="flex flex-wrap justify-center gap-2 md:gap-4 my-8">
+                <div id="category-filters" class="flex flex-wrap justify-center gap-2 md:gap-4 my-8">
                     <!-- Filters will be injected here -->
                 </div>
                 <div id="poems-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -1829,15 +2139,18 @@
                             <div>
                                 <label for="poem-emotion" class="block text-sm font-medium" style="color: var(--c-text);">Category (Emotion)</label>
                                 <select id="poem-emotion" class="mt-1 block w-full rounded-lg p-3 focus:ring-2 outline-none transition-shadow admin-input" required>
-                                    <option value="">Select a category...</option>
-                                    <option value="Love">Love</option>
-                                    <option value="Loss">Loss</option>
-                                    <option value="Hope">Hope</option>
-                                    <option value="Healing">Healing</option>
-                                    <option value="Chaos">Chaos</option>
-                                    <option value="Silent Nights">Silent Nights</option>
-                                    <option value="Red Verse">Red Verse</option>
+                                    <option value="">Loading categories...</option>
+                                    <!-- Categories will be populated here by JS -->
                                 </select>
+                            </div>
+                            
+                            <!-- New Category Input -->
+                            <div class="pt-4 border-t" style="border-color: var(--c-accent-2);">
+                                 <label for="new-category-input" class="block text-sm font-medium" style="color: var(--c-text);">Or Add New Category</label>
+                                 <div class="flex gap-2 mt-1">
+                                    <input type="text" id="new-category-input" class="block w-full rounded-lg p-3 focus:ring-2 outline-none transition-shadow admin-input" placeholder="e.g. Joy">
+                                    <button type="button" id="add-category-btn" class="font-bold py-2 px-5 rounded-full shadow-lg hover:opacity-90 transition-all text-sm whitespace-nowrap" style="background-color: var(--c-accent-1); color: var(--c-bg);">Add</button>
+                                 </div>
                             </div>
 
                             <!-- Content -->
