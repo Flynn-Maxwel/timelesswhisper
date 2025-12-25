@@ -5,15 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Timeless Whispers</title>
     
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..900&family=Lora:ital,wght@0,400..700;1,400..700&family=Raleway:wght@300;400;500&family=Cinzel+Decorative:wght@700&display=swap" rel="stylesheet">
     
-    <!-- Firebase -->
     <script type="module">
       // Import the functions you need from the SDKs you need
       import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
@@ -47,11 +44,6 @@
 
       // Your web app's Firebase configuration
       // *** THIS IS YOUR LIVE, PUBLIC CONFIGURATION ***
-      // NOTE: This config is slightly different from the user's.
-      // We will use the __firebase_config global variable provided by the environment.
-      // And we will use the __app_id global variable.
-      // And we will use the __initial_auth_token global variable.
-
       let firebaseConfig;
       let appId;
 
@@ -61,7 +53,7 @@
           appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
           console.log("Using environment Firebase config.");
       } else {
-          console.warn("Using fallback Firebase config. This may not work with production security rules.");
+          console.warn("Using fallback Firebase config.");
           firebaseConfig = {
             apiKey: "AIzaSyCsufbKfJcNZ40aDXDNXgHI-QphkFmXi-0",
             authDomain: "timelesswhispers-37f98.firebaseapp.com",
@@ -71,9 +63,8 @@
             appId: "1:632234683017:web:04f44be51fa2f88075b458",
             measurementId: "G-PLN3R3YSCX"
           };
-          appId = firebaseConfig.appId; // Use appId from fallback config
+          appId = firebaseConfig.appId;
       }
-
 
       // Initialize Firebase
       const app = initializeApp(firebaseConfig);
@@ -84,11 +75,9 @@
       document.addEventListener('DOMContentLoaded', () => {
         
         // --- Collection References ---
-        // Use the environment-aware appId
         const poemsColRef = collection(db, "artifacts", appId, "public", "data", "poems");
         const commentsColRef = collection(db, "artifacts", appId, "public", "data", "comments");
         const usersColRef = collection(db, "artifacts", appId, "users");
-        // New reference for the categories document
         const categoriesDocRef = doc(db, "artifacts", appId, "public", "data", "siteState", "categories");
 
         
@@ -98,28 +87,27 @@
         // --- STATE MANAGEMENT ---
         let currentTheme = 'light';
         let activeFilter = 'All';
-        let categories = [...defaultCategories]; // This will be filled from Firestore
-        let favoritePoemIds = []; // Stores Firebase doc IDs (strings)
-        let currentOpenPoemId = null; // Stores Firebase doc ID (string)
-        let allPoems = []; // This will be filled from Firestore
+        let categories = [...defaultCategories]; 
+        let favoritePoemIds = []; 
+        let currentOpenPoemId = null; 
+        let allPoems = []; 
         let currentUserId = null;
-        let adminListeners = []; // To store admin onSnapshot listeners
-        let poemFormEditId = null; // Stores ID of poem being edited
-        let userFavoritesUnsubscribe = null; // To unsubscribe from user's favorites
-        let hasLoadedInitialData = false; // FIX: Flag to prevent re-loading data on auth flicker
-        let commentsUnsubscribe = null; // To store the onSnapshot listener
+        let adminListeners = []; 
+        let poemFormEditId = null; 
+        let userFavoritesUnsubscribe = null; 
+        let commentsUnsubscribe = null; 
 
         // --- DOM ELEMENTS ---
         const docElement = document.documentElement;
         const body = document.body;
         const topNav = document.getElementById('top-nav');
-        const categoryFiltersContainer = document.getElementById('category-filters'); // Renamed
+        const categoryFiltersContainer = document.getElementById('category-filters');
         const poemsGrid = document.getElementById('poems-grid');
         const modal = document.getElementById('quick-preview-modal');
         const modalContent = document.getElementById('modal-poem-content');
         const modalCloseBtn = document.getElementById('modal-close-btn');
         const themeToggleButton = document.getElementById('theme-toggle');
-        const heroSection = document.getElementById('about'); // For Red Verse
+        const heroSection = document.getElementById('about'); 
         
         // Auth DOM Elements
         const navAuth = document.getElementById('nav-auth');
@@ -171,7 +159,6 @@
 
         // --- RENDER FUNCTIONS ---
 
-        // New function to seed categories if they don't exist
         async function seedCategoriesIfNeeded() {
             try {
                 const docSnap = await getDoc(categoriesDocRef);
@@ -180,38 +167,31 @@
                     await setDoc(categoriesDocRef, { list: defaultCategories });
                     categories = [...defaultCategories];
                 } else {
-                    // Load categories from Firestore
                     categories = docSnap.data().list || [...defaultCategories];
                 }
             } catch (error) {
                 console.error("Error seeding or checking categories:", error);
-                categories = [...defaultCategories]; // Fallback
+                categories = [...defaultCategories]; 
             }
         }
 
-        // New function to load categories from Firestore
         function loadCategories() {
             onSnapshot(categoriesDocRef, (docSnap) => {
                 if (docSnap.exists()) {
                     categories = docSnap.data().list || [...defaultCategories];
                 } else {
-                    // Doc doesn't exist, seed it
-                    seedCategoriesIfNeeded(); // This will also update the 'categories' variable
+                    seedCategoriesIfNeeded(); 
                 }
-                
-                // Once categories are loaded/updated, re-render the UI
                 renderCategoryFilters();
                 renderAdminCategorySelect();
             }, (error) => {
                 console.error("Error listening to categories:", error);
-                // Fallback to defaults if listener fails
                 categories = [...defaultCategories];
                 renderCategoryFilters();
                 renderAdminCategorySelect();
             });
         }
         
-        // Renamed and updated to use dynamic 'categories'
         function renderCategoryFilters() {
             if (!categoryFiltersContainer) return;
             categoryFiltersContainer.innerHTML = categories.map(category => `
@@ -225,12 +205,10 @@
                     const filter = btn.dataset.filter;
                     
                     if (filter === 'Red Verse') {
-                        // Show the password modal instead of filtering
                         redVersePasswordInput.value = "";
                         redVerseError.classList.add('hidden');
                         redVerseModal.classList.add('visible');
                     } else {
-                        // Handle other filters normally
                         clearRedVerseTheme();
                         activeFilter = filter;
                         renderCategoryFilters();
@@ -240,7 +218,6 @@
             });
         }
 
-        // New function to populate the admin category dropdown
         function renderAdminCategorySelect() {
             if (!poemEmotionSelect) return;
             
@@ -248,7 +225,6 @@
             poemEmotionSelect.innerHTML = `<option value="">Select a category...</option>`;
             
             categories.forEach(category => {
-                // "All" and "Favorites" are filters, not assignable categories
                 if (category === 'All' || category === 'Favorites') return;
 
                 poemEmotionSelect.innerHTML += `
@@ -265,7 +241,6 @@
             let filteredPoems;
             
             if (activeFilter === 'All') {
-                // Filter out "Red Verse" poems from the "All" category
                 filteredPoems = allPoems.filter(p => p.emotion !== "Red Verse");
             } else if (activeFilter === 'Favorites') {
                 filteredPoems = allPoems.filter(p => favoritePoemIds.includes(p.docId));
@@ -276,16 +251,21 @@
             }
             
             if (filteredPoems.length === 0) {
-                if (!hasLoadedInitialData) {
-                    poemsGrid.innerHTML = `<p class="col-span-full text-center opacity-70">Loading poems...</p>`;
-                    return;
+                // Determine if we are just waiting for data or if it's truly empty
+                // Since loadPoemsFromFirestore runs immediately, if allPoems is empty, it might be loading.
+                // But if allPoems has items but filtered is empty, then no matches.
+                
+                if (allPoems.length === 0) {
+                     poemsGrid.innerHTML = `<p class="col-span-full text-center opacity-70">Loading poems...</p>`;
+                     return;
                 }
+
                 if (activeFilter === 'Favorites') {
                     poemsGrid.innerHTML = `<p class="col-span-full text-center opacity-70">You haven't favorited any poems yet.</p>`;
                 } else if (activeFilter === 'Red Verse') {
                     poemsGrid.innerHTML = `<p class="col-span-full text-center opacity-70 italic">The verse is unwritten. The page awaits the crimson ink.</p>`;
                 } else {
-                     poemsGrid.innerHTML = `<p class="col-span-full text-center opacity-70">No poems found in this category.</p>`;
+                      poemsGrid.innerHTML = `<p class="col-span-full text-center opacity-70">No poems found in this category.</p>`;
                 }
                 return;
             }
@@ -335,11 +315,9 @@
                             ${poem.subtitle ? `<p class="italic opacity-60 mb-8">${poem.subtitle}</p>` : '<div class="mb-8"></div>'}
                         </div>
                         <div class="flex-shrink-0 flex items-center gap-4">
-                            <!-- Share Button -->
                             <button id="shareButton" class="flex items-center gap-1 py-1 px-2 rounded-full text-sm transition-all duration-300 opacity-70 hover:opacity-100" style="color: var(--c-highlight);">
                                 ${ShareIcon} Share
                             </button>
-                            <!-- Like Button and Count -->
                             <div class="flex items-center gap-1 opacity-80">
                                 <button id="likeButton" class="py-1 px-2 rounded-full text-sm transition-all duration-300 disabled:opacity-60" style="color: var(--c-highlight);">
                                     ❤️ Like
@@ -353,11 +331,9 @@
                     </div>
                     <div class="whitespace-pre-wrap leading-relaxed">${poem.content.replace(/\n/g, '<br>')}</div>
                     
-                    <!-- Reflections Section -->
                     <div class="mt-12 pt-8 border-t" style="border-color: var(--c-accent-2)">
                         <h3 class="font-headline text-xl font-bold mb-4" style="color: var(--c-accent-1);">Reflections</h3>
                         
-                        <!-- Comment Form -->
                         <div id="comment-form-container" class="mb-6">
                             <p id="comment-signin-prompt" class="hidden opacity-70">
                                 <button class="font-bold underline" style="color: var(--c-accent-1);" id="comment-login-btn">Sign in</button> to leave a reflection.
@@ -369,10 +345,8 @@
                             </div>
                         </div>
                         
-                        <!-- Comment List -->
                         <div id="list" class="space-y-4 max-h-60 overflow-y-auto">
-                            <!-- Comments will be loaded here -->
-                        </div>
+                            </div>
                     </div>
                 `;
                 modal.classList.add('visible');
@@ -384,7 +358,7 @@
                 });
                 modal.querySelector('#shareButton').addEventListener('click', sharePoem);
                 modal.querySelector('#likeButton').addEventListener('click', likePost);
-                modal.querySelector('#post-comment-btn').addEventListener('click', () => postComment()); // Updated
+                modal.querySelector('#post-comment-btn').addEventListener('click', () => postComment()); 
                 modal.querySelector('#comment-login-btn').addEventListener('click', googleLogin);
 
                 
@@ -440,8 +414,7 @@
         async function toggleFavorite(poemDocId) {
             if (!currentUserId) {
                 console.log("Must be logged in to favorite.");
-                // Maybe show a sign-in prompt
-                googleLogin(); // Let's try to log them in
+                googleLogin(); 
                 return;
             }
             
@@ -471,12 +444,9 @@
             
             // Note: The onSnapshot listener for favorites will automatically
             // update the UI, so no need to call renderPoemsGrid() manually.
-            // If modal is open, we need to refresh its heart icon.
              if (modal.classList.contains('visible') && currentOpenPoemId === poemDocId) {
                  const modalHeartBtn = modal.querySelector('.favorite-btn');
                  if (modalHeartBtn) {
-                    // We manually update here for instant UI feedback
-                    // The onSnapshot will correct it if something fails
                     if(favoritePoemIds.includes(poemDocId)) {
                          modalHeartBtn.innerHTML = HeartIconOutline;
                     } else {
@@ -519,14 +489,9 @@
         const provider = new GoogleAuthProvider();
 
         window.googleLogin = function(){
-            // The 'auth/unauthorized-domain' error is a FIREBASE SETTINGS issue.
-            // You must add the domain from the error log (e.g., scf.usercontent.goog)
-            // to the Firebase -> Authentication -> Settings -> Authorized domains list.
             signInWithPopup(auth, provider)
             .then(result => {
                 console.log("Logged in as " + result.user.displayName);
-                // Save user data to Firestore (private)
-                // saveUser(result.user); // This is now handled by onAuthStateChanged
             })
             .catch(err => console.error("Google Sign-In Error:", err.code, err.message));
         }
@@ -551,15 +516,6 @@
                     // User is signed in
                     currentUserId = user.uid;
                     
-                    // --- Load initial data ONCE after auth is ready ---
-                    if (!hasLoadedInitialData) {
-                        console.log("Auth ready, loading initial data...");
-                        loadCategories(); // This will load categories, then render filters
-                        loadPoemsFromFirestore();
-                        hasLoadedInitialData = true;
-                    }
-                    // --- End initial data load ---
-                    
                     if (user.isAnonymous) {
                         console.log("User signed in anonymously:", user.uid);
                         if (userName) userName.textContent = 'Hi, Guest';
@@ -567,7 +523,6 @@
                     } else {
                         console.log("User signed in:", user.displayName);
                         currentUserId = user.uid;
-                        // FIX: Check if user.displayName is not null before splitting
                         const displayName = user.displayName ? user.displayName.split(' ')[0] : 'User';
                         if (userName) userName.textContent = `Hi, ${displayName}`;
                         if (navAuth) navAuth.classList.add('signed-in');
@@ -579,16 +534,14 @@
                     }
                     
                     // *** ADMIN CHECK ***
-                    // Use a more robust check if possible, email might be null
                     if (user.email === 'timelesswhispersmax@gmail.com') {
                         if (adminLink) adminLink.classList.remove('hidden');
                         if (adminSection) adminSection.classList.remove('hidden');
-                        // Load all admin data
                         loadAdminData();
                     } else {
                         if (adminLink) adminLink.classList.add('hidden');
                         if (adminSection) adminSection.classList.add('hidden');
-                        cleanupAdminListeners(); // Detach listeners if not admin
+                        cleanupAdminListeners(); 
                     }
                     
                 } else {
@@ -597,7 +550,6 @@
                     currentUserId = null;
                     if (userName) userName.textContent = '';
                     if (navAuth) navAuth.classList.remove('signed-in');
-                    hasLoadedInitialData = false; // Reset flag
                     
                     // Clear local favorites and re-render
                     favoritePoemIds = [];
@@ -610,7 +562,7 @@
                     // Hide admin panel if signed out
                     if (adminLink) adminLink.classList.add('hidden');
                     if (adminSection) adminSection.classList.add('hidden');
-                    cleanupAdminListeners(); // Detach listeners on sign out
+                    cleanupAdminListeners(); 
                 }
                 // Update comment form visibility if modal is open
                 checkAuthForComments(user);
@@ -631,7 +583,6 @@
                 }
             } catch (error) {
                 console.error("Error during initial sign-in:", error);
-                // Fallback to anonymous just in case
                 if (auth.currentUser == null) {
                     console.log("Retrying with anonymous sign-in...");
                     await signInAnonymously(auth);
@@ -641,8 +592,6 @@
 
 
         async function saveUser(u){
-         // Save user data to a private collection
-         // Use the environment-aware appId
          const userRef = doc(db, "artifacts", appId, "users", u.uid);
          try {
             await setDoc(userRef, {
@@ -664,15 +613,12 @@
                 navigator.share({
                     title: poem.title,
                     text: `Check out this poem: "${poem.title || 'The Space Between'}"`,
-                    url: window.location.href // Shares the main site URL
+                    url: window.location.href 
                 })
                 .then(() => console.log('Successful share'))
                 .catch((error) => console.log('Error sharing', error));
             } else {
                 console.log('Web Share API not supported.');
-                // Fallback: you could copy a link to the clipboard here
-                // Note: navigator.clipboard.writeText may not work in iframe
-                // Using document.execCommand as a fallback
                 try {
                     const textToCopy = `Check out "${poem.title || 'The Space Between'}" at ${window.location.href}`;
                     const textArea = document.createElement("textarea");
@@ -682,7 +628,6 @@
                     document.execCommand('copy');
                     document.body.removeChild(textArea);
                     console.log('Poem link copied to clipboard (fallback).');
-                    // We can't use alert, so maybe show a small message in the modal
                     const shareBtn = document.getElementById('shareButton');
                     if(shareBtn) shareBtn.innerHTML = "Copied!";
                     setTimeout(() => {
@@ -700,12 +645,12 @@
         window.likePost = async function() {
             if (!currentUserId) {
                 console.error("Login first to like a post.");
-                googleLogin(); // Prompt for login
+                googleLogin(); 
                 return;
             }
             if (auth.currentUser.isAnonymous) {
                 console.error("Sign in with Google to like a post.");
-                googleLogin(); // Prompt for login
+                googleLogin(); 
                 return;
             }
             if (!currentOpenPoemId) {
@@ -714,10 +659,8 @@
             }
 
             const likeButton = document.getElementById("likeButton");
-            likeButton.disabled = true; // Disable to prevent spam
+            likeButton.disabled = true; 
 
-            // Public likes collection
-            // Use environment-aware appId
             const likeRef = doc(db, "artifacts", appId, "public", "data", "likes", `${currentOpenPoemId}_${currentUserId}`);
             const poemRef = doc(poemsColRef, currentOpenPoemId);
 
@@ -727,31 +670,27 @@
                 if (likeSnap.exists()) {
                     console.log("You have already liked this post.");
                     likeButton.textContent = "❤️ Liked";
-                    return; // Already liked
+                    return; 
                 }
 
-                // User hasn't liked it, so add a new like document
                 await setDoc(likeRef, {
                     poemID: currentOpenPoemId,
                     userID: currentUserId,
                     time: serverTimestamp()
                 });
                 
-                // This is a simple (but not perfect) way to increment a counter
-                // A Cloud Function would be better for high-traffic
                 const poemSnap = await getDoc(poemRef);
                 const currentLikes = poemSnap.data().likeCount || 0;
                 await updateDoc(poemRef, {
                     likeCount: currentLikes + 1
                 });
 
-                // Manually refresh the count
                 loadLikes(currentOpenPoemId);
                 likeButton.textContent = "❤️ Liked";
 
             } catch (e) {
                 console.error("Error liking post: ", e);
-                likeButton.disabled = false; // Re-enable on error
+                likeButton.disabled = false; 
             }
         }
 
@@ -761,16 +700,13 @@
             if (!likeCountSpan || !likeButton) return;
 
             try {
-                // 1. Get the total like count from the poem document itself
                 const poemRef = doc(poemsColRef, poemDocId);
                 const poemSnap = await getDoc(poemRef);
                 if (poemSnap.exists()) {
                     likeCountSpan.textContent = poemSnap.data().likeCount || 0;
                 }
 
-                // 2. Check user's like status
                 if (currentUserId && auth.currentUser && !auth.currentUser.isAnonymous) {
-                    // Use environment-aware appId
                     const likeRef = doc(db, "artifacts", appId, "public", "data", "likes", `${currentOpenPoemId}_${currentUserId}`);
                     const likeSnap = await getDoc(likeRef);
                     
@@ -782,7 +718,7 @@
                         likeButton.textContent = "❤️ Like";
                     }
                 } else {
-                    likeButton.disabled = false; // Enable it so they can click to log in
+                    likeButton.disabled = false; 
                     likeButton.textContent = "❤️ Sign in to like";
                 }
 
@@ -797,7 +733,7 @@
         function checkAuthForComments(user) {
             const commentForm = document.getElementById('comment-form');
             const signinPrompt = document.getElementById('comment-signin-prompt');
-            if (!commentForm || !signinPrompt) return; // Modal not open
+            if (!commentForm || !signinPrompt) return; 
 
             if (user && !user.isAnonymous) {
                 commentForm.classList.remove('hidden');
@@ -808,12 +744,11 @@
             }
         }
 
-        // Updated to handle replies
         window.postComment = async function(replyToId = null) {
             const user = auth.currentUser;
             if (!user || user.isAnonymous) {
                 console.error("Login first!");
-                googleLogin(); // Prompt for login
+                googleLogin(); 
                 return;
             }
             if (!currentOpenPoemId) {
@@ -826,11 +761,9 @@
             let postBtn;
 
             if (replyToId) {
-                // We are posting a reply
                 textEl = document.getElementById(`reply-text-${replyToId}`);
                 postBtn = document.getElementById(`reply-btn-${replyToId}`);
             } else {
-                // We are posting a parent comment
                 textEl = document.getElementById("comment");
                 postBtn = document.getElementById('post-comment-btn');
             }
@@ -840,7 +773,7 @@
                 return;
             }
             text = textEl.value;
-            if (!text.trim()) return; // Don't post empty comments
+            if (!text.trim()) return; 
 
             if (postBtn) {
                 postBtn.disabled = true;
@@ -848,11 +781,10 @@
             }
 
             try {
-                // Save to a public subcollection
                 const commentData = {
                     poemID: currentOpenPoemId,
                     userID: user.uid,
-                    user: user.displayName, // user's display name
+                    user: user.displayName, 
                     text: text,
                     time: serverTimestamp()
                 };
@@ -864,16 +796,14 @@
                 await addDoc(commentsColRef, commentData);
                 
                 console.log("Comment posted!");
-                textEl.value = ""; // Clear textarea
+                textEl.value = ""; 
 
-                // If it was a reply, remove the form
                 if (replyToId) {
                     const formContainer = document.getElementById(`reply-form-${replyToId}`);
                     if (formContainer) {
                         formContainer.remove();
                     }
                 } else {
-                    // Show success message for parent comment
                     const successMsg = document.getElementById('comment-success-msg');
                     if (successMsg) {
                         successMsg.style.display = 'inline';
@@ -881,7 +811,6 @@
                     }
                 }
                 
-                // loadComments() will be triggered by onSnapshot
             } catch (e) {
                 console.error("Error posting comment: ", e);
             } finally {
@@ -892,13 +821,11 @@
             }
         };
 
-        // Updated to handle replies
         window.loadComments = async function(poemDocId){
             const list = document.getElementById('list');
-            if (!list) return; // Exit if modal isn't open
+            if (!list) return; 
             list.innerHTML = "<p class='opacity-50'>Loading reflections...</p>";
             
-            // If we have a previous listener, detach it
             if (commentsUnsubscribe) {
                 commentsUnsubscribe();
             }
@@ -906,7 +833,6 @@
             const q = query(
                 commentsColRef, 
                 where("poemID", "==", poemDocId)
-                // We will sort in code
             );
             
             commentsUnsubscribe = onSnapshot(q, (querySnapshot) => {
@@ -915,22 +841,18 @@
                     allComments.push({ ...doc.data(), docId: doc.id });
                 });
 
-                // Sort all by time, oldest first
                 allComments.sort((a, b) => (a.time?.seconds || 0) - (b.time?.seconds || 0));
                 
-                // Separate parents and replies
                 const parentComments = [];
-                const repliesMap = new Map(); // Map<parentId, reply[]>
+                const repliesMap = new Map(); 
 
                 for (const comment of allComments) {
                     if (comment.replyTo) {
-                        // This is a reply
                         if (!repliesMap.has(comment.replyTo)) {
                             repliesMap.set(comment.replyTo, []);
                         }
                         repliesMap.get(comment.replyTo).push(comment);
                     } else {
-                        // This is a parent comment
                         parentComments.push(comment);
                     }
                 }
@@ -943,10 +865,8 @@
             });
         }
 
-        // Renders one comment (parent or reply)
         function renderSingleComment(comment) {
             const time = comment.time ? new Date(comment.time.seconds * 1000).toLocaleString() : 'Just now';
-            // Only parent comments get a reply button
             const replyButton = !comment.replyTo
                 ? `<button class="reply-btn text-sm font-bold opacity-70 hover:opacity-100" data-comment-id="${comment.docId}" style="color: var(--c-accent-1);">Reply</button>`
                 : '';
@@ -960,17 +880,13 @@
                         </p>
                         ${replyButton}
                     </div>
-                    <!-- Container for reply form -->
                     <div id="reply-form-${comment.docId}" class="pl-5 mt-2"></div>
-                    <!-- Container for replies -->
                     <div id="replies-${comment.docId}" class="pl-5 mt-3 space-y-3 replies-container">
-                        <!-- Replies will be injected here -->
-                    </div>
+                        </div>
                 </div>
             `;
         }
 
-        // Updated to render threads
         function renderComments(parentComments, repliesMap) {
             const list = document.getElementById('list');
             if (!list) return;
@@ -980,10 +896,8 @@
                 return;
             }
             
-            // Render parent comments
             list.innerHTML = parentComments.map(renderSingleComment).join('');
 
-            // Now, render replies
             for (const [parentId, replies] of repliesMap.entries()) {
                 const repliesContainer = document.getElementById(`replies-${parentId}`);
                 if (repliesContainer) {
@@ -991,7 +905,6 @@
                 }
             }
 
-            // After HTML is in, attach listeners
             attachCommentButtonListeners();
         }
 
@@ -1005,7 +918,6 @@
         }
 
         function showReplyForm(commentId) {
-            // Remove any other open reply forms
             const existingForms = document.querySelectorAll('.reply-form');
             existingForms.forEach(form => form.remove());
 
@@ -1021,12 +933,10 @@
                     </div>
                 `;
 
-                // Add listener for the new "Post" button
                 document.getElementById(`reply-btn-${commentId}`).addEventListener('click', () => {
                     postComment(commentId);
                 });
 
-                // Add listener for the new "Cancel" button
                 formContainer.querySelector('.cancel-reply-btn').addEventListener('click', (e) => {
                     const containerId = e.target.dataset.container;
                     const container = document.getElementById(containerId);
@@ -1048,7 +958,7 @@
             }
              if (auth.currentUser.isAnonymous) {
                 console.error("Sign in with Google to submit a review.");
-                googleLogin(); // Prompt for login
+                googleLogin(); 
                 return;
             }
             
@@ -1061,14 +971,11 @@
             btn.textContent = "Sending...";
             
             try {
-                // 1. Save to user's private collection in Firestore
-                // Use environment-aware appId
                 await addDoc(collection(db, "artifacts", appId, "users", currentUserId, "reviews"), {
                     text: reviewText,
                     createdAt: serverTimestamp()
                 });
 
-                // 2. Clear form and show success
                 document.getElementById('review-text').value = '';
                 msg.textContent = "Feedback sent. Thank you!";
                 msg.classList.remove('hidden');
@@ -1094,7 +1001,7 @@
             }
              if (auth.currentUser.isAnonymous) {
                 console.error("Sign in with Google to submit a poem.");
-                googleLogin(); // Prompt for login
+                googleLogin(); 
                 return;
             }
             
@@ -1108,15 +1015,12 @@
             btn.textContent = "Submitting...";
 
             try {
-                // 1. Save to user's private collection in Firestore
-                // Use environment-aware appId
                 await addDoc(collection(db, "artifacts", appId, "users", currentUserId, "submissions"), {
                     title: title,
                     content: content,
                     createdAt: serverTimestamp()
                 });
 
-                // 2. Clear form and show success
                 document.getElementById('submission-title').value = '';
                 document.getElementById('submission-content').value = '';
                 msg.textContent = "Poem submitted. Thank you!";
@@ -1136,25 +1040,20 @@
 
         // --- ADMIN PANEL FUNCTIONS ---
         
-        // --- 1. Load All Data ---
         function loadAdminData() {
-            // Detach old listeners before attaching new ones
             cleanupAdminListeners();
             
-            // Attach new listeners and store them
             adminListeners.push(loadPoemsForAdmin());
             adminListeners.push(loadCommentsForAdmin());
             adminListeners.push(loadSubmissionsForAdmin());
         }
         
-        // --- 2. Load Poems (for Admin List) ---
         function loadPoemsForAdmin() {
-            // We sort by the 'id' field, which is the original numeric ID
             const q = query(poemsColRef);
             const unsubscribe = onSnapshot(q, (snapshot) => {
                 if (!adminPoemList) return;
-                adminPoemList.innerHTML = ''; // Clear list
-                statTotalPoems.textContent = snapshot.size; // Update stat
+                adminPoemList.innerHTML = ''; 
+                statTotalPoems.textContent = snapshot.size; 
                 
                 if (snapshot.empty) {
                     adminPoemList.innerHTML = `<p class="opacity-70">No poems found.</p>`;
@@ -1166,7 +1065,6 @@
                     adminPoems.push({ ...doc.data(), docId: doc.id });
                 });
 
-                // Sort in code by the 'id' field
                 adminPoems.sort((a, b) => (b.id || 0) - (a.id || 0));
 
                 adminPoems.forEach(poem => {
@@ -1186,7 +1084,6 @@
                     adminPoemList.appendChild(poemEl);
                 });
                 
-                // Attach event listeners for new buttons
                 adminPoemList.querySelectorAll('.edit-poem-btn').forEach(btn => {
                     btn.addEventListener('click', () => editPoem(btn.dataset.id));
                 });
@@ -1198,16 +1095,15 @@
                 console.error("Error loading admin poems:", error);
                 adminPoemList.innerHTML = `<p class="text-red-500">Error loading poems.</p>`;
             });
-            return unsubscribe; // Return for cleanup
+            return unsubscribe; 
         }
         
-        // --- 3. Load Comments (for Moderation) ---
         function loadCommentsForAdmin() {
             const q = query(commentsColRef, orderBy("time", "desc"));
             const unsubscribe = onSnapshot(q, (snapshot) => {
                 if (!adminCommentList) return;
-                adminCommentList.innerHTML = ''; // Clear list
-                statTotalComments.textContent = snapshot.size; // Update stat
+                adminCommentList.innerHTML = ''; 
+                statTotalComments.textContent = snapshot.size; 
 
                 if (snapshot.empty) {
                     adminCommentList.innerHTML = `<p class="opacity-70">No comments found.</p>`;
@@ -1227,7 +1123,6 @@
                     adminCommentList.appendChild(commentEl);
                 });
                 
-                // Attach listeners
                 adminCommentList.querySelectorAll('.delete-comment-btn').forEach(btn => {
                     btn.addEventListener('click', () => deleteComment(btn.dataset.id));
                 });
@@ -1236,18 +1131,16 @@
                 console.error("Error loading admin comments:", error);
                 adminCommentList.innerHTML = `<p class="text-red-500">Error loading comments.</p>`;
             });
-            return unsubscribe; // Return for cleanup
+            return unsubscribe; 
         }
         
-        // --- 4. Load Submissions (from all users) ---
         function loadSubmissionsForAdmin() {
-            // This listener will update the user count stat
             const unsubscribe = onSnapshot(usersColRef, async (usersSnapshot) => {
                 if (!adminReviewList || !adminSubmissionList) return;
                 
                 adminReviewList.innerHTML = '';
                 adminSubmissionList.innerHTML = '';
-                statTotalUsers.textContent = usersSnapshot.size; // Update stat
+                statTotalUsers.textContent = usersSnapshot.size; 
                 
                 let reviewsFound = false;
                 let submissionsFound = false;
@@ -1255,8 +1148,6 @@
                 for (const userDoc of usersSnapshot.docs) {
                     const user = userDoc.data();
                     
-                    // Get Reviews
-                    // Use environment-aware appId
                     const reviewsRef = collection(db, "artifacts", appId, "users", userDoc.id, "reviews");
                     const reviewsSnap = await getDocs(query(reviewsRef, orderBy("createdAt", "desc")));
                     reviewsSnap.forEach(doc => {
@@ -1272,8 +1163,6 @@
                         adminReviewList.appendChild(el);
                     });
                     
-                    // Get Submissions
-                    // Use environment-aware appId
                     const submissionsRef = collection(db, "artifacts", appId, "users", userDoc.id, "submissions");
                     const submissionsSnap = await getDocs(query(submissionsRef, orderBy("createdAt", "desc")));
                     submissionsSnap.forEach(doc => {
@@ -1297,60 +1186,48 @@
             }, (error) => {
                 console.error("Error loading user submissions:", error);
             });
-            return unsubscribe; // Return for cleanup
+            return unsubscribe; 
         }
         
-        // --- 5. Admin Action: Delete Poem ---
         async function deletePoem(poemDocId) {
             if (!poemDocId) return;
-            // Note: We might want to delete all comments/likes associated with this poem too.
-            // For now, just delete the poem.
             try {
                 await deleteDoc(doc(poemsColRef, poemDocId));
                 console.log("Poem deleted:", poemDocId);
-                // The onSnapshot listener will auto-update the list
             } catch (error) {
                 console.error("Error deleting poem:", error);
             }
         }
         
-        // --- 6. Admin Action: Delete Comment ---
         async function deleteComment(commentDocId) {
             if (!commentDocId) return;
             try {
                 await deleteDoc(doc(commentsColRef, commentDocId));
                 console.log("Comment deleted:", commentDocId);
-                // The onSnapshot listener will auto-update the list
             } catch (error) {
                 console.error("Error deleting comment:", error);
             }
         }
         
-        // --- 7. Admin Action: Edit Poem (Load data into form) ---
         function editPoem(poemDocId) {
             const poem = allPoems.find(p => p.docId === poemDocId);
             if (!poem) return;
             
-            // Store the ID for the submit handler
             poemFormEditId = poemDocId;
             
-            // Populate the form
             document.getElementById('poem-title').value = poem.title || '';
             document.getElementById('poem-content').value = poem.content || '';
             document.getElementById('poem-emotion').value = poem.emotion || '';
             
-            // Change UI
             poemFormTitle.textContent = "Edit Poem";
             submitBtn.textContent = "Update Poem";
             
-            // Switch to the "Add/Edit Poem" tab
             adminTabs.forEach(t => t.classList.remove('admin-tab-active'));
             addEditPoemTab.classList.add('admin-tab-active');
             adminTabContents.forEach(c => c.classList.add('hidden'));
             document.getElementById('content-add-edit-poem').classList.remove('hidden');
         }
         
-        // --- 8. Admin Action: Reset Poem Form ---
         function resetPoemForm() {
             poemForm.reset();
             poemFormEditId = null;
@@ -1359,16 +1236,15 @@
             statusMessage.classList.add('hidden');
         }
 
-        // --- 9. Admin Panel Form Logic (Handles BOTH Add and Edit) ---
         function showStatus(message, isError = false) {
-            if (statusMessage) { // Add check in case admin HTML is missing
+            if (statusMessage) { 
                 statusMessage.textContent = message;
                 statusMessage.className = `text-sm ${isError ? 'text-red-600' : 'text-green-600'}`;
                 statusMessage.classList.remove('hidden');
             }
         }
         
-        if (poemForm) { // Only attach listener if the form exists
+        if (poemForm) { 
             poemForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
                 
@@ -1386,24 +1262,20 @@
                 
                 try {
                     if (poemFormEditId) {
-                        // --- UPDATE existing poem ---
                         showStatus("Updating...", false);
                         const poemRef = doc(poemsColRef, poemFormEditId);
                         await updateDoc(poemRef, {
                             title: title,
                             content: content,
                             emotion: emotion
-                            // We don't update the 'id' field
                         });
                         console.log("Poem updated with ID: ", poemFormEditId);
                         showStatus("Poem updated successfully!", false);
                         resetPoemForm();
                         
                     } else {
-                        // --- ADD new poem ---
                         showStatus("Submitting...", false);
-                        // 1. Get all existing poems to find the highest ID
-                        const q = query(poemsColRef); // No need to order, just get all
+                        const q = query(poemsColRef); 
                         const snapshot = await getDocs(q);
                         let highestId = 0;
                         if (!snapshot.empty) {
@@ -1415,15 +1287,13 @@
                             });
                         }
                         
-                        // 2. Create the new poem object with the next ID
                         const newPoem = {
                             title: title,
                             content: content,
                             emotion: emotion,
-                            id: highestId + 1 // Ensure new poems sort to the end
+                            id: highestId + 1 
                         };
 
-                        // 3. Add the new poem to the correct collection
                         const docRef = await addDoc(poemsColRef, newPoem);
                         
                         console.log("Poem submitted with ID: ", docRef.id);
@@ -1441,17 +1311,14 @@
             });
         }
         
-        // --- 10. Admin Tab Switching Logic ---
         if (adminTabs) {
             adminTabs.forEach(tab => {
                 tab.addEventListener('click', () => {
                     const target = tab.dataset.tab;
                     
-                    // Update tab styles
                     adminTabs.forEach(t => t.classList.remove('admin-tab-active'));
                     tab.classList.add('admin-tab-active');
                     
-                    // Show/hide content
                     adminTabContents.forEach(content => {
                         if (content.id === `content-${target}`) {
                             content.classList.remove('hidden');
@@ -1460,7 +1327,6 @@
                         }
                     });
                     
-                    // If switching to Add/Edit tab, reset the form
                     if (target === 'add-edit-poem') {
                         resetPoemForm();
                     }
@@ -1468,7 +1334,6 @@
             });
         }
         
-        // --- 11. Admin Add Category Logic ---
         if (addCategoryBtn) {
             addCategoryBtn.addEventListener('click', async () => {
                 const newCategoryName = newCategoryInput.value.trim();
@@ -1476,7 +1341,6 @@
                     showStatus("Please enter a category name.", true);
                     return;
                 }
-                // Check if category already exists (case-insensitive)
                 if (categories.some(cat => cat.toLowerCase() === newCategoryName.toLowerCase())) {
                     showStatus("This category already exists.", true);
                     return;
@@ -1485,11 +1349,9 @@
                 try {
                     addCategoryBtn.disabled = true;
                     showStatus("Adding category...", false);
-                    // Update the document in Firestore
                     await updateDoc(categoriesDocRef, {
                         list: arrayUnion(newCategoryName)
                     });
-                    // The onSnapshot listener will automatically update the UI
                     newCategoryInput.value = '';
                     showStatus("Category added!", false);
                 } catch (error) {
@@ -1509,7 +1371,7 @@
                 renderPoemsGrid();
                 currentOpenPoemId = null;
                 if (commentsUnsubscribe) {
-                    commentsUnsubscribe(); // Detach listener when modal closes
+                    commentsUnsubscribe(); 
                     commentsUnsubscribe = null;
                 }
             });
@@ -1522,7 +1384,7 @@
                     renderPoemsGrid();
                     currentOpenPoemId = null;
                     if (commentsUnsubscribe) {
-                        commentsUnsubscribe(); // Detach listener when modal closes
+                        commentsUnsubscribe(); 
                         commentsUnsubscribe = null;
                     }
                 }
@@ -1576,8 +1438,6 @@
             }); 
         });
 
-        // FIX: Moved all data-dependent initialization into setupAuthListener
-        // Only non-data, non-auth listeners should be here.
         async function init() {
             // Attach login/logout to buttons in nav
             if (loginBtn) loginBtn.addEventListener('click', googleLogin);
@@ -1595,18 +1455,17 @@
                 document.getElementById('submission-form').addEventListener('submit', handlePoemSubmit);
             }
 
-            // Set up the authentication listener
-            // This will also handle the initial sign-in and trigger data loading
-            await setupAuthListener();
+            // --- LOAD DATA IMMEDIATELY (For Everyone) ---
+            console.log("Initializing: Loading public data...");
+            loadCategories(); 
+            loadPoemsFromFirestore(); 
 
-            // Note: Data loading (loadCategories, loadPoemsFromFirestore)
-            // is now called INSIDE setupAuthListener once auth is ready.
+            // --- SETUP AUTH (For User Specifics) ---
+            await setupAuthListener();
         }
         
         // --- INITIALIZATION ---
         
-        // This is the array of poems that will be auto-uploaded
-        // ONCE, if the database is empty.
         const defaultPoems = [
             { id: 1, title: 'The Eyes of Her Soul', emotion: 'Love', content: `The secrets of her soul are reflected in her eyes,\nWhich are like two pools of liquid light.\nDeep within them lies an untold universe,\nA beautifully scrolled story of emotions.\n\nJust a quick look can captivate me\nAnd transport me to the depths of her stunning eyes.\nA glimpse of the calm and perceptive soul,\nA kaleidoscope of emotions and invisible colors.` },
             { id: 2, title: 'In Her Presence', emotion: 'Love', content: `The sun is not as bright when I am not with her.\nIn her absence, the clouds are ominous and threatening.\nThe birds’ singing becomes less melodious\nWhen I am not around her.\n\nI feel like the walls close in on me\nWhen I’m not with her.\nWhispering her name keeps me going\nWhen I am desolate and without her.\n\nBut she gives me a boost when we are together.\nIn her presence, I possess the strength to move mountains.\nI am capable of withstand- ing anything\nWhen I am with her.\n\nWhen we are together,\nHer smile makes me feel so happy.\nThe angels sing her name\nWhen we are together.\n\nI fall in love all over again\nWhen we are together.` },
@@ -1621,17 +1480,13 @@
         ];
 
         async function seedDatabaseIfNeeded() {
-            // Check if poems are already in the database
             const q = query(poemsColRef);
             const snapshot = await getDocs(q);
             
             if (snapshot.empty) {
                 console.log("No poems found in DB. Seeding...");
-                // Database is empty, let's upload the default poems
                 for (const poem of defaultPoems) {
                     try {
-                        // Add each poem as a new document
-                        // The document ID will be auto-generated by Firebase
                         await addDoc(poemsColRef, poem);
                     } catch (e) {
                         console.error("Error seeding poem: ", e);
@@ -1645,34 +1500,21 @@
         
         async function loadPoemsFromFirestore() {
             try {
-                // First, check if we need to seed the DB
                 await seedDatabaseIfNeeded();
                 
-                // Now, load all poems from the database
-                // We use onSnapshot to listen for real-time updates
                 const q = query(poemsColRef); 
                 onSnapshot(q, (snapshot) => {
-                    allPoems = []; // Clear the local array
+                    allPoems = []; 
                     snapshot.forEach((doc) => {
                         allPoems.push({
                             ...doc.data(),
-                            docId: doc.id // Store the unique Firebase Document ID
+                            docId: doc.id 
                         });
                     });
 
-                    // Sort in code to avoid Firebase index issues
                     allPoems.sort((a, b) => (a.id || 0) - (b.id || 0));
                     
-                    // --- DEBUGGING CODE ---
-                    // Log all loaded poems to see what data is coming from Firestore.
                     console.log("All poems loaded from Firestore:", allPoems); 
-                    
-                    // Log all "emotion" fields the code can see.
-                    const emotionsInDB = allPoems.map(p => p.emotion);
-                    console.log("Emotions found in database:", [...new Set(emotionsInDB)]); // Use Set to show unique values
-                    // --- END DEBUGGING CODE ---
-                    
-                    // Once poems are loaded, render the grid
                     renderPoemsGrid();
 
                 }, (error) => {
@@ -1980,7 +1822,6 @@
 </head>
 <body class="font-body">
 
-    <!-- STICKY NAV -->
     <nav id="top-nav" class="fixed top-0 left-1/2 -translate-x-1/2 py-3 px-6 z-50 mt-4 rounded-full shadow-lg">
         <div class="mx-auto flex justify-between items-center gap-6">
             <a href="#about" class="font-headline text-2xl font-bold whitespace-nowrap" style="color: var(--c-accent-1);">Timeless Whispers</a>
@@ -2010,7 +1851,6 @@
 
     <main>
         
-        <!-- ABOUT ME (CINEMATIC HERO) -->
         <section id="about" class="min-h-screen flex items-center justify-center relative p-8 text-center text-white" style="background-image: url('https://images.unsplash.com/photo-1455390582262-044cdead277a?q=80&w=1973&auto=format=fit=crop'); background-size: cover; background-position: center; background-color: var(--dark-bg);">
             <div class="absolute inset-0 bg-black/60 z-10"></div>
             <div class="relative z-20 max-w-3xl mx-auto px-4 fade-in-up">
@@ -2022,7 +1862,6 @@
             </div>
         </section>
 
-        <!-- POET'S JOURNAL (INTERLUDE) -->
         <section id="journal" class="min-h-screen py-20 px-4 md:px-8 flex items-center justify-center" style="background-color: var(--dark-bg); color: var(--dark-text);">
             <div class="max-w-3xl mx-auto text-center fade-in-up">
                 <h2 class="font-headline text-4xl font-bold" style="color: var(--dark-highlight)">Poet’s Journal</h2>
@@ -2040,20 +1879,16 @@
             </div>
         </section>
 
-        <!-- EMOTION GALLERY -->
         <section id="gallery" class="min-h-screen py-20 px-4 md:px-8 flex items-center">
             <div class="max-w-6xl w-full mx-auto">
                 <h2 class="font-headline text-4xl text-center font-bold" style="color: var(--c-highlight)">Read what your heart needs.</h2>
                 <div id="category-filters" class="flex flex-wrap justify-center gap-2 md:gap-4 my-8">
-                    <!-- Filters will be injected here -->
-                </div>
+                    </div>
                 <div id="poems-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                    <!-- Poem cards will be injected here -->
-                </div>
+                    </div>
             </div>
         </section>
 
-        <!-- CONNECT / SUBMIT -->
         <section id="connect" class="min-h-screen py-20 px-4 flex items-center justify-center bg-black/5 dark:bg-white/5">
             <div class="max-w-5xl mx-auto w-full">
                 <h2 class="font-headline text-3xl font-bold text-center" style="color: var(--c-accent-1)">Join the Conversation</h2>
@@ -2061,7 +1896,6 @@
                 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-16">
                     
-                    <!-- Left: Leave a Review -->
                     <div>
                         <h3 class="font-headline text-2xl font-bold" style="color: var(--c-highlight)">Leave a Review</h3>
                         <p class="opacity-70 mt-1 mb-4 text-sm">Have feedback? Found a bug? Share your thoughts.</p>
@@ -2072,7 +1906,6 @@
                         </form>
                     </div>
                     
-                    <!-- Right: Share Your Whisper -->
                     <div>
                         <h3 class="font-headline text-2xl font-bold" style="color: var(--c-highlight)">Share Your Whisper</h3>
                         <p class="opacity-70 mt-1 mb-4 text-sm">Submit your own poem for a chance to be featured.</p>
@@ -2088,12 +1921,10 @@
             </div>
         </section>
         
-        <!-- ADMIN PANEL (Hidden by default) -->
         <section id="admin" class="py-20 px-4 hidden" style="background-color: var(--c-bg);">
             <div class="max-w-4xl mx-auto p-4 md:p-8">
                 <h2 class="font-headline text-3xl font-bold text-center mb-8" style="color: var(--c-highlight);">Admin Panel</h2>
                 
-                <!-- Admin Tabs -->
                 <div class="mb-6 border-b" style="border-color: var(--c-accent-2);">
                     <nav class="flex -mb-px space-x-6">
                         <button class="admin-tab admin-tab-active font-medium pb-3" data-tab="dashboard">Dashboard</button>
@@ -2104,9 +1935,7 @@
                     </nav>
                 </div>
 
-                <!-- Admin Tab Content -->
                 <div>
-                    <!-- Dashboard -->
                     <div id="content-dashboard" class="admin-tab-content">
                         <h3 class="font-headline text-2xl mb-4" style="color: var(--c-accent-1);">Site Statistics</h3>
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -2125,26 +1954,21 @@
                         </div>
                     </div>
                     
-                    <!-- Add/Edit Poem -->
                     <div id="content-add-edit-poem" class="admin-tab-content hidden">
                         <form id="poem-form" class="space-y-4">
                             <h3 id="poem-form-title" class="font-headline text-2xl mb-4" style="color: var(--c-accent-1);">Add a New Poem</h3>
-                            <!-- Title -->
                             <div>
                                 <label for="poem-title" class="block text-sm font-medium" style="color: var(--c-text);">Title</label>
                                 <input type="text" id="poem-title" class="mt-1 block w-full rounded-lg p-3 focus:ring-2 outline-none transition-shadow admin-input" required>
                             </div>
 
-                            <!-- Category -->
                             <div>
                                 <label for="poem-emotion" class="block text-sm font-medium" style="color: var(--c-text);">Category (Emotion)</label>
                                 <select id="poem-emotion" class="mt-1 block w-full rounded-lg p-3 focus:ring-2 outline-none transition-shadow admin-input" required>
                                     <option value="">Loading categories...</option>
-                                    <!-- Categories will be populated here by JS -->
-                                </select>
+                                    </select>
                             </div>
                             
-                            <!-- New Category Input -->
                             <div class="pt-4 border-t" style="border-color: var(--c-accent-2);">
                                  <label for="new-category-input" class="block text-sm font-medium" style="color: var(--c-text);">Or Add New Category</label>
                                  <div class="flex gap-2 mt-1">
@@ -2153,14 +1977,12 @@
                                  </div>
                             </div>
 
-                            <!-- Content -->
                             <div>
                                 <label for="poem-content" class="block text-sm font-medium" style="color: var(--c-text);">Content</label>
                                 <textarea id="poem-content" rows="15" class="mt-1 block w-full rounded-lg p-3 focus:ring-2 outline-none transition-shadow admin-input" required></textarea>
                                 <p class="text-xs opacity-60 mt-1">Line breaks will be preserved.</p>
                             </div>
 
-                            <!-- Submit Button -->
                             <div class="flex items-center gap-4">
                                 <button id="submit-btn" type="submit" class="font-bold py-2 px-5 rounded-full shadow-lg hover:opacity-90 transition-all text-sm disabled:opacity-60" style="background-color: var(--c-accent-1); color: var(--c-bg);">
                                     Submit Poem
@@ -2174,37 +1996,30 @@
                         </form>
                     </div>
                     
-                    <!-- Manage Poems -->
                     <div id="content-manage-poems" class="admin-tab-content hidden">
                         <h3 class="font-headline text-2xl mb-4" style="color: var(--c-accent-1);">Manage Poems</h3>
                         <div id="admin-poem-list" class="space-y-2 admin-data-list">
-                            <!-- Poem list will be populated here by JS -->
-                        </div>
+                            </div>
                     </div>
                     
-                    <!-- Moderate Comments -->
                     <div id="content-moderate-comments" class="admin-tab-content hidden">
                         <h3 class="font-headline text-2xl mb-4" style="color: var(--c-accent-1);">Moderate Comments</h3>
                         <div id="admin-comment-list" class="space-y-4 admin-data-list">
-                            <!-- Comment list will be populated here by JS -->
-                        </div>
+                            </div>
                     </div>
                     
-                    <!-- View Submissions -->
                     <div id="content-view-submissions" class="admin-tab-content hidden">
                         <h3 class="font-headline text-2xl mb-4" style="color: var(--c-accent-1);">View User Submissions</h3>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
                             <div>
                                 <h4 class="font-bold text-lg mb-2">Reviews</h4>
                                 <div id="admin-review-list" class="space-y-4 admin-data-list">
-                                    <!-- Reviews will be populated here by JS -->
-                                </div>
+                                    </div>
                             </div>
                             <div>
                                 <h4 class="font-bold text-lg mb-2">Poem Submissions</h4>
                                 <div id="admin-submission-list" class="space-y-4 admin-data-list">
-                                    <!-- Submissions will be populated here by JS -->
-                                </div>
+                                    </div>
                             </div>
                         </div>
                     </div>
@@ -2215,7 +2030,6 @@
         
     </main>
 
-    <!-- FOOTER -->
     <footer class="py-12 text-center border-t" style="border-color: var(--c-accent-2);">
         <div class="flex justify-center gap-6 mb-4">
             <a href="#about" class="hover:text-[var(--c-highlight)] transition-colors">About</a>
@@ -2227,7 +2041,6 @@
         <p class="text-sm mt-4 opacity-50">&copy; 2025 Timeless Whispers. All Rights Reserved.</p>
     </footer>
 
-    <!-- QUICK PREVIEW MODAL -->
     <div id="quick-preview-modal" class="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-[60] opacity-0 pointer-events-none transition-opacity duration-300">
         <div class="modal-content w-full max-w-2xl max-h-[80vh] overflow-y-auto p-8 md:p-12 rounded-lg shadow-2xl relative z-[60]" style="background-color: var(--c-bg);">
             <button id="modal-close-btn" class="absolute top-4 right-4 text-2xl opacity-50 hover:opacity-100 transition-opacity" style="color: var(--c-text)">&times;</button>
@@ -2235,7 +2048,6 @@
         </div>
     </div>
     
-    <!-- RED VERSE PASSWORD MODAL -->
     <div id="red-verse-modal" class="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-[70] opacity-0 pointer-events-none transition-opacity duration-300">
         <div class="modal-content w-full max-w-lg p-8 md:p-10 rounded-lg shadow-2xl relative" style="background-color: var(--red-bg); color: var(--red-text);">
             <button id="red-verse-close-btn" class="absolute top-4 right-4 text-2xl opacity-50 hover:opacity-100 transition-opacity" style="color: var(--red-text)">&times;</button>
@@ -2262,12 +2074,8 @@
         </div>
     </div>
 
-    <!-- THEME TOGGLE BUTTON -->
     <button id="theme-toggle" class="fixed top-6 right-6 w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 shadow-lg z-50" style="background-color: var(--c-accent-2); color: var(--c-text);">
-        <!-- Icon will be injected here -->
-    </button>
+        </button>
     
 </body>
 </html>
-
-
